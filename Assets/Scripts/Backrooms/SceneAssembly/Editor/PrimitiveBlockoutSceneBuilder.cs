@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Backrooms.Core;
+using Backrooms.Debugging;
 using Backrooms.LevelPackages;
 using Backrooms.Loading;
 using Backrooms.Player;
