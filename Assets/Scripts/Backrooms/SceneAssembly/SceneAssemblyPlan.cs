@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Backrooms.Atmosphere;
+using Backrooms.Grammar;
+using Backrooms.Landmarks;
 using UnityEngine;
 
 namespace Backrooms.SceneAssembly
@@ -12,6 +15,10 @@ namespace Backrooms.SceneAssembly
         public string sceneName;
         public string levelId;
         public int seed;
+        public LevelIdentityProfile identity;
+        public RoomGrammarProfile grammar;
+        public AtmosphereProfile atmosphere;
+        public List<LandmarkProfile> landmarks = new List<LandmarkProfile>();
         public List<BlockoutRoomPlan> rooms = new List<BlockoutRoomPlan>();
         public List<BlockoutConnectionPlan> connections = new List<BlockoutConnectionPlan>();
         public List<BlockoutLightPlan> lights = new List<BlockoutLightPlan>();

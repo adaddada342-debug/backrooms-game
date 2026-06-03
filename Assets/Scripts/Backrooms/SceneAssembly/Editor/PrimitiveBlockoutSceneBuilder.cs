@@ -8,6 +8,7 @@ using Backrooms.Loading;
 using Backrooms.Player;
 using Backrooms.SceneAssembly.Primitive;
 using Backrooms.Transitions;
+using Backrooms.Validation;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -20,6 +21,7 @@ namespace Backrooms.SceneAssembly.Editor
         private const string ScenePath = "Assets/Scenes/Level0_Local_Blockout.unity";
         private const string RegistryPath = "Assets/Data/LevelPackages/LevelPackageRegistry.asset";
         private const string ReportPath = "Assets/Data/SceneAssembly/Reports/level0_local_blockout_assembly_report.json";
+        private const string ValidationReportPath = "Assets/Data/SceneAssembly/Reports/level0_validation_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
@@ -67,11 +69,14 @@ namespace Backrooms.SceneAssembly.Editor
             }
 
             ValidatePlanHasBasicRoute(plan, result);
+            AssemblyValidationReport validationReport = AssemblyValidator.Validate(plan);
+            WriteValidationReport(validationReport);
 
             GameObject runtimeRoot = new GameObject("Backrooms_Runtime");
             LevelLoader levelLoader = runtimeRoot.AddComponent<LevelLoader>();
             LevelPackageRegistry registry = CreateOrUpdateRegistry(plan);
             levelLoader.SetRegistry(registry);
+            CreateDebugObject(plan, validationReport);
 
             CreatePlayer();
 
@@ -103,6 +108,8 @@ namespace Backrooms.SceneAssembly.Editor
 
             Debug.Log(
                 $"Level 0 local blockout scene created. Scene: {ScenePath}, saved: {saved}, report: {ReportPath}");
+            Debug.Log(
+                $"Assembly validation scores - Grammar: {validationReport.grammarScore:0.00}, Atmosphere: {validationReport.atmosphereScore:0.00}, Landmark: {validationReport.landmarkScore:0.00}, Identity: {validationReport.identityScore:0.00}, Route: {validationReport.routeScore:0.00}");
         }
 
         private static void CreateRoom(
@@ -256,6 +263,15 @@ namespace Backrooms.SceneAssembly.Editor
                 transition.targetPackageId,
                 transition.transitionType,
                 levelLoader);
+        }
+
+        private static void CreateDebugObject(
+            SceneAssemblyPlan plan,
+            AssemblyValidationReport validationReport)
+        {
+            GameObject debugObject = new GameObject("Backrooms_Debug");
+            LevelDebugInfo debugInfo = debugObject.AddComponent<LevelDebugInfo>();
+            debugInfo.Configure(plan.identity, plan.grammar, plan.atmosphere, validationReport);
         }
 
         private static List<BlockoutOpeningPlan> GetOpeningsForRoom(SceneAssemblyPlan plan, string roomId)
@@ -551,6 +567,12 @@ namespace Backrooms.SceneAssembly.Editor
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ReportPath));
             File.WriteAllText(ReportPath, JsonUtility.ToJson(result, true));
+        }
+
+        private static void WriteValidationReport(AssemblyValidationReport report)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ValidationReportPath));
+            File.WriteAllText(ValidationReportPath, JsonUtility.ToJson(report, true));
         }
     }
 }

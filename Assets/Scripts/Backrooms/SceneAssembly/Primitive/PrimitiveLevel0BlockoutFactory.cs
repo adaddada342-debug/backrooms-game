@@ -1,4 +1,5 @@
 using Backrooms.Core;
+using Backrooms.ProductionData;
 using UnityEngine;
 
 namespace Backrooms.SceneAssembly.Primitive
@@ -13,7 +14,11 @@ namespace Backrooms.SceneAssembly.Primitive
                 packageId = BackroomsConstants.DefaultPackageId,
                 sceneName = "Level0_Local_Blockout",
                 levelId = BackroomsConstants.DefaultLevelId,
-                seed = 1001
+                seed = 1001,
+                identity = Level0ProductionProfiles.CreateLevel0Identity(),
+                grammar = Level0ProductionProfiles.CreateLevel0Grammar(),
+                atmosphere = Level0ProductionProfiles.CreateLevel0Atmosphere(),
+                landmarks = Level0ProductionProfiles.CreateLevel0Landmarks()
             };
 
             plan.rooms.Add(new BlockoutRoomPlan
