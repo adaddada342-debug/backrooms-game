@@ -2,9 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Backrooms.Atmosphere;
 using Backrooms.Core;
 using Backrooms.Debugging;
 using Backrooms.LevelPackages;
+using Backrooms.LayoutSynthesis.Models;
 using Backrooms.Loading;
 using Backrooms.Player;
 using Backrooms.SceneAssembly.Primitive;
@@ -23,11 +25,15 @@ namespace Backrooms.SceneAssembly.Editor
         private const string RegistryPath = "Assets/Data/LevelPackages/LevelPackageRegistry.asset";
         private const string ReportPath = "Assets/Data/SceneAssembly/Reports/level0_local_blockout_assembly_report.json";
         private const string ValidationReportPath = "Assets/Data/SceneAssembly/Reports/level0_validation_report.json";
+        private const string SynthesisReportPath = "Assets/Data/LayoutSynthesis/Reports/level0_synthesis_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
         {
-            SceneAssemblyPlan plan = PrimitiveLevel0BlockoutFactory.CreateDefaultPlan();
+            SceneAssemblyPlan plan = PrimitiveLevel0BlockoutFactory.CreateSynthesizedDefaultPlan();
+            WriteSynthesisReport(
+                PrimitiveLevel0BlockoutFactory.LastSynthesisResult,
+                PrimitiveLevel0BlockoutFactory.LastSynthesisUsedFallback);
             SceneAssemblyResult result = new SceneAssemblyResult
             {
                 sceneName = plan.sceneName,
@@ -45,6 +51,7 @@ namespace Backrooms.SceneAssembly.Editor
             Material lightMaterial = CreateMaterial("Blockout_Fluorescent_Light", new Color(0.82f, 0.95f, 0.83f));
             Material openingMarkerMaterial = CreateTransparentMaterial("Blockout_Opening_Debug", new Color(0.1f, 0.8f, 0.45f, 0.28f));
             Material triggerMarkerMaterial = CreateTransparentMaterial("Blockout_Transition_Trigger_Debug", new Color(0.2f, 0.65f, 1f, 0.35f));
+            AtmosphereApplier.ApplyBasicAtmosphere(plan.atmosphere);
 
             GameObject geometryRoot = new GameObject("Blockout_Geometry");
             foreach (BlockoutRoomPlan room in plan.rooms)
@@ -72,6 +79,10 @@ namespace Backrooms.SceneAssembly.Editor
             ValidatePlanHasBasicRoute(plan, result);
             AssemblyValidationReport validationReport = AssemblyValidator.Validate(plan);
             WriteValidationReport(validationReport);
+            if (!validationReport.passed)
+            {
+                Debug.LogWarning("Assembly validation failed for the generated Level 0 plan. The scene builder will continue unless scene assembly blockers are present.");
+            }
 
             GameObject runtimeRoot = new GameObject("Backrooms_Runtime");
             LevelLoader levelLoader = runtimeRoot.AddComponent<LevelLoader>();
@@ -272,7 +283,7 @@ namespace Backrooms.SceneAssembly.Editor
         {
             GameObject debugObject = new GameObject("Backrooms_Debug");
             LevelDebugInfo debugInfo = debugObject.AddComponent<LevelDebugInfo>();
-            debugInfo.Configure(plan.identity, plan.grammar, plan.atmosphere, validationReport);
+            debugInfo.Configure(plan.identity, plan.grammar, plan.atmosphere, validationReport, plan);
         }
 
         private static List<BlockoutOpeningPlan> GetOpeningsForRoom(SceneAssemblyPlan plan, string roomId)
@@ -389,7 +400,7 @@ namespace Backrooms.SceneAssembly.Editor
                 AddIssue(result, "route.spawn_to_corridor_missing", "Plan must connect spawn_office to long_corridor.", true);
             }
 
-            if (!HasConnection(plan, "long_corridor", "transition_room"))
+            if (!HasRoute(plan, "long_corridor", "transition_room"))
             {
                 AddIssue(result, "route.corridor_to_transition_missing", "Plan must connect long_corridor to transition_room.", true);
             }
@@ -435,6 +446,66 @@ namespace Backrooms.SceneAssembly.Editor
                 if (forward || reverse)
                 {
                     return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasRoute(SceneAssemblyPlan plan, string startRoomId, string targetRoomId)
+        {
+            Dictionary<string, List<string>> graph = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            if (plan.rooms != null)
+            {
+                foreach (BlockoutRoomPlan room in plan.rooms)
+                {
+                    if (room != null && !string.IsNullOrWhiteSpace(room.roomId) && !graph.ContainsKey(room.roomId))
+                    {
+                        graph.Add(room.roomId, new List<string>());
+                    }
+                }
+            }
+
+            if (!graph.ContainsKey(startRoomId) || !graph.ContainsKey(targetRoomId))
+            {
+                return false;
+            }
+
+            if (plan.connections != null)
+            {
+                foreach (BlockoutConnectionPlan connection in plan.connections)
+                {
+                    if (connection == null ||
+                        !graph.ContainsKey(connection.fromRoomId) ||
+                        !graph.ContainsKey(connection.toRoomId))
+                    {
+                        continue;
+                    }
+
+                    graph[connection.fromRoomId].Add(connection.toRoomId);
+                    graph[connection.toRoomId].Add(connection.fromRoomId);
+                }
+            }
+
+            Queue<string> queue = new Queue<string>();
+            HashSet<string> visited = new HashSet<string>(StringComparer.Ordinal);
+            queue.Enqueue(startRoomId);
+            visited.Add(startRoomId);
+
+            while (queue.Count > 0)
+            {
+                string current = queue.Dequeue();
+                if (string.Equals(current, targetRoomId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                foreach (string next in graph[current])
+                {
+                    if (visited.Add(next))
+                    {
+                        queue.Enqueue(next);
+                    }
                 }
             }
 
@@ -574,6 +645,12 @@ namespace Backrooms.SceneAssembly.Editor
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ValidationReportPath));
             File.WriteAllText(ValidationReportPath, JsonUtility.ToJson(report, true));
+        }
+
+        private static void WriteSynthesisReport(LayoutSynthesisResult result, bool fallbackUsed)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SynthesisReportPath));
+            File.WriteAllText(SynthesisReportPath, JsonUtility.ToJson(LayoutSynthesisReport.FromResult(result, fallbackUsed), true));
         }
     }
 }

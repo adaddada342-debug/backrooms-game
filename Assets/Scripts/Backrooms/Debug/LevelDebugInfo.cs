@@ -1,5 +1,6 @@
 using Backrooms.Atmosphere;
 using Backrooms.Grammar;
+using Backrooms.SceneAssembly;
 using Backrooms.Validation;
 using UnityEngine;
 
@@ -25,12 +26,26 @@ namespace Backrooms.Debugging
         public float identityScore;
         public float routeScore;
         public int validationIssueCount;
+        public int roomCount;
+        public int connectionCount;
+        public int openingCount;
+        public int landmarkCount;
 
         public void Configure(
             LevelIdentityProfile newIdentity,
             RoomGrammarProfile newGrammar,
             AtmosphereProfile newAtmosphere,
             AssemblyValidationReport newValidationReport)
+        {
+            Configure(newIdentity, newGrammar, newAtmosphere, newValidationReport, null);
+        }
+
+        public void Configure(
+            LevelIdentityProfile newIdentity,
+            RoomGrammarProfile newGrammar,
+            AtmosphereProfile newAtmosphere,
+            AssemblyValidationReport newValidationReport,
+            SceneAssemblyPlan plan)
         {
             identity = newIdentity;
             grammar = newGrammar;
@@ -51,6 +66,10 @@ namespace Backrooms.Debugging
             validationIssueCount = newValidationReport == null || newValidationReport.issues == null
                 ? 0
                 : newValidationReport.issues.Count;
+            roomCount = plan == null || plan.rooms == null ? 0 : plan.rooms.Count;
+            connectionCount = plan == null || plan.connections == null ? 0 : plan.connections.Count;
+            openingCount = plan == null || plan.openings == null ? 0 : plan.openings.Count;
+            landmarkCount = plan == null || plan.landmarks == null ? 0 : plan.landmarks.Count;
         }
     }
 }

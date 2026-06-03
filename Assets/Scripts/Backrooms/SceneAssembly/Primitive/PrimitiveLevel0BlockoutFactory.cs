@@ -1,4 +1,6 @@
 using Backrooms.Core;
+using Backrooms.LayoutSynthesis.Level0;
+using Backrooms.LayoutSynthesis.Models;
 using Backrooms.ProductionData;
 using UnityEngine;
 
@@ -6,6 +8,46 @@ namespace Backrooms.SceneAssembly.Primitive
 {
     public static class PrimitiveLevel0BlockoutFactory
     {
+        public static LayoutSynthesisResult LastSynthesisResult { get; private set; }
+        public static bool LastSynthesisUsedFallback { get; private set; }
+
+        public static SceneAssemblyPlan CreateSynthesizedDefaultPlan()
+        {
+            LayoutSynthesisRequest request = Level0LayoutSynthesisRequestFactory.CreateDefaultRequest();
+            Level0LayoutSynthesizer synthesizer = new Level0LayoutSynthesizer();
+            LastSynthesisResult = synthesizer.Synthesize(request);
+            LastSynthesisUsedFallback = LastSynthesisResult == null || !LastSynthesisResult.succeeded || LastSynthesisResult.plan == null;
+
+            if (!LastSynthesisUsedFallback)
+            {
+                return LastSynthesisResult.plan;
+            }
+
+            Debug.LogWarning("Level 0 layout synthesis failed. Falling back to the hardcoded primitive Level 0 plan.");
+            if (LastSynthesisResult != null && LastSynthesisResult.issues != null)
+            {
+                foreach (LayoutSynthesisIssue issue in LastSynthesisResult.issues)
+                {
+                    if (issue == null)
+                    {
+                        continue;
+                    }
+
+                    string message = issue.code + ": " + issue.message;
+                    if (issue.blocker)
+                    {
+                        Debug.LogError(message);
+                    }
+                    else
+                    {
+                        Debug.LogWarning(message);
+                    }
+                }
+            }
+
+            return CreateDefaultPlan();
+        }
+
         public static SceneAssemblyPlan CreateDefaultPlan()
         {
             SceneAssemblyPlan plan = new SceneAssemblyPlan

@@ -178,7 +178,7 @@ namespace Backrooms.Validation
                 AddIssue(report, "route.spawn_to_corridor_missing", "Route must connect spawn_office to long_corridor.", true);
             }
 
-            if (!HasConnection(plan, "long_corridor", "transition_room"))
+            if (!HasRoute(plan, "long_corridor", "transition_room"))
             {
                 AddIssue(report, "route.corridor_to_transition_missing", "Route must connect long_corridor to transition_room.", true);
             }
@@ -260,6 +260,60 @@ namespace Backrooms.Validation
                 if (forward || reverse)
                 {
                     return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasRoute(SceneAssemblyPlan plan, string startRoomId, string targetRoomId)
+        {
+            Dictionary<string, List<string>> graph = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (BlockoutRoomPlan room in SafeRooms(plan))
+            {
+                if (room != null && !string.IsNullOrWhiteSpace(room.roomId) && !graph.ContainsKey(room.roomId))
+                {
+                    graph.Add(room.roomId, new List<string>());
+                }
+            }
+
+            if (!graph.ContainsKey(startRoomId) || !graph.ContainsKey(targetRoomId))
+            {
+                return false;
+            }
+
+            foreach (BlockoutConnectionPlan connection in plan.connections ?? new List<BlockoutConnectionPlan>())
+            {
+                if (connection == null ||
+                    !graph.ContainsKey(connection.fromRoomId) ||
+                    !graph.ContainsKey(connection.toRoomId))
+                {
+                    continue;
+                }
+
+                graph[connection.fromRoomId].Add(connection.toRoomId);
+                graph[connection.toRoomId].Add(connection.fromRoomId);
+            }
+
+            Queue<string> queue = new Queue<string>();
+            HashSet<string> visited = new HashSet<string>(StringComparer.Ordinal);
+            queue.Enqueue(startRoomId);
+            visited.Add(startRoomId);
+
+            while (queue.Count > 0)
+            {
+                string current = queue.Dequeue();
+                if (string.Equals(current, targetRoomId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                foreach (string next in graph[current])
+                {
+                    if (visited.Add(next))
+                    {
+                        queue.Enqueue(next);
+                    }
                 }
             }
 
