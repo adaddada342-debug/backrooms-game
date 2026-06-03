@@ -10,6 +10,11 @@ namespace Backrooms.Loading
         [SerializeField]
         private LevelPackageRegistry registry = null;
 
+        public void SetRegistry(LevelPackageRegistry newRegistry)
+        {
+            registry = newRegistry;
+        }
+
         public void Load(LevelLoadRequest request)
         {
             if (request == null)
@@ -72,6 +77,12 @@ namespace Backrooms.Loading
             }
 
             // TODO: Add Addressables, remote catalog, and CDN support after local package validation exists.
+            if (!Application.CanStreamedLevelBeLoaded(manifest.sceneName))
+            {
+                Debug.LogWarning(
+                    $"Scene '{manifest.sceneName}' may not be loadable. Add it to Build Settings or verify the local scene name.");
+            }
+
             SceneManager.LoadScene(manifest.sceneName);
         }
     }
