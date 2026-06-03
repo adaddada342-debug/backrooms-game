@@ -16,6 +16,7 @@ namespace Backrooms.SceneAssembly
         public List<BlockoutConnectionPlan> connections = new List<BlockoutConnectionPlan>();
         public List<BlockoutLightPlan> lights = new List<BlockoutLightPlan>();
         public List<BlockoutTransitionPlan> transitions = new List<BlockoutTransitionPlan>();
+        public List<BlockoutOpeningPlan> openings = new List<BlockoutOpeningPlan>();
     }
 
     [Serializable]
@@ -57,5 +58,15 @@ namespace Backrooms.SceneAssembly
         public string targetLevelId;
         public string targetPackageId;
         public string transitionType;
+    }
+
+    [Serializable]
+    public class BlockoutOpeningPlan
+    {
+        public string openingId;
+        public string roomId;
+        public Vector3 position;
+        public Vector3 size;
+        public string directionHint;
     }
 }

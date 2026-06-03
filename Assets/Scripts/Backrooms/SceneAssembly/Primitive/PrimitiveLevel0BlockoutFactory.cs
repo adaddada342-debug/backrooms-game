@@ -79,6 +79,60 @@ namespace Backrooms.SceneAssembly.Primitive
                 size = new Vector3(3f, 3f, 2f)
             });
 
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "spawn_office_to_corridor",
+                roomId = "spawn_office",
+                position = new Vector3(0f, 1.2f, 4f),
+                size = new Vector3(3f, 2.4f, 0.2f),
+                directionHint = "north"
+            });
+
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "corridor_to_spawn_office",
+                roomId = "long_corridor",
+                position = new Vector3(0f, 1.2f, 2f),
+                size = new Vector3(3f, 2.4f, 0.2f),
+                directionHint = "south"
+            });
+
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "corridor_to_side_dead_end",
+                roomId = "long_corridor",
+                position = new Vector3(2f, 1.2f, 12f),
+                size = new Vector3(0.2f, 2.4f, 3.2f),
+                directionHint = "east"
+            });
+
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "side_dead_end_to_corridor",
+                roomId = "side_dead_end",
+                position = new Vector3(4f, 1.2f, 12f),
+                size = new Vector3(0.2f, 2.4f, 3.2f),
+                directionHint = "west"
+            });
+
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "corridor_to_transition_room",
+                roomId = "long_corridor",
+                position = new Vector3(0f, 1.2f, 18f),
+                size = new Vector3(3f, 2.4f, 0.2f),
+                directionHint = "north"
+            });
+
+            plan.openings.Add(new BlockoutOpeningPlan
+            {
+                openingId = "transition_room_to_corridor",
+                roomId = "transition_room",
+                position = new Vector3(0f, 1.2f, 18f),
+                size = new Vector3(3f, 2.4f, 0.2f),
+                directionHint = "south"
+            });
+
             plan.lights.Add(new BlockoutLightPlan
             {
                 lightId = "spawn_light_bar",

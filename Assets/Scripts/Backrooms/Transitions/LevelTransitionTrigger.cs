@@ -80,6 +80,9 @@ namespace Backrooms.Transitions
                 hasExplicitSeed = false
             };
 
+            Debug.Log(
+                $"Level transition triggered. targetPackageId='{targetPackageId}', targetLevelId='{targetLevelId}', transitionType='{transitionType}'.");
+
             levelLoader.Load(request);
         }
     }
