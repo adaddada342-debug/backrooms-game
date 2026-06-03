@@ -12,7 +12,7 @@ Wave 01 converts the uploaded deep research report into the first controlled Cod
 - Future waves expand the archive toward the 1000-file target.
 
 ## Implementation Notes
-- Open `docs/00_BRAIN/000_BRAIN.md` first.
+- Open `docs/00_BRAIN/000_000_brain.md` first.
 - Then open `docs/_INDEX/1000_FILE_ARCHIVE_PLAN.md` and `docs/_INDEX/WAVE_ROADMAP.md`.
 
 ## Codex Instructions
@@ -21,8 +21,10 @@ Wave 01 converts the uploaded deep research report into the first controlled Cod
 - When uncertain, preserve ambiguity and ask for a design decision rather than filling with generic horror.
 
 ## Related Files
-- docs/00_BRAIN/000_BRAIN.md
-- docs/00_BRAIN/001_CODEX_OPERATING_CONTRACT.md
+- docs/00_BRAIN/000_000_brain.md
+- docs/00_BRAIN/001_001_codex_operating_contract.md
+- docs/_INDEX/1000_FILE_ARCHIVE_PLAN.md
+- docs/_INDEX/WAVE_ROADMAP.md
 
 ## Notes
 - Wave 01 foundation file.
