@@ -20,6 +20,22 @@ namespace Backrooms.LevelPackages
         public string checksum;
         public List<string> requiredAssetPackIds = new List<string>();
         public List<LevelPackageTag> tags = new List<LevelPackageTag>();
+
+        public bool HasSceneReference()
+        {
+            return !string.IsNullOrWhiteSpace(sceneName) ||
+                   !string.IsNullOrWhiteSpace(sceneAddress);
+        }
+
+        public bool HasValidationReference()
+        {
+            return !string.IsNullOrWhiteSpace(validationReportId);
+        }
+
+        public bool HasCreditsReference()
+        {
+            return !string.IsNullOrWhiteSpace(creditsId);
+        }
     }
 
     [Serializable]
