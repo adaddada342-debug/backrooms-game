@@ -14,6 +14,17 @@ namespace Backrooms.SceneAssembly.Primitive
         public static SceneAssemblyPlan CreateSynthesizedDefaultPlan()
         {
             LayoutSynthesisRequest request = Level0LayoutSynthesisRequestFactory.CreateDefaultRequest();
+            return CreateSynthesizedPlanFromRequest(request);
+        }
+
+        public static SceneAssemblyPlan CreateSynthesizedPlanForSeed(int seed)
+        {
+            LayoutSynthesisRequest request = Level0LayoutSynthesisRequestFactory.CreateRequestForSeed(seed);
+            return CreateSynthesizedPlanFromRequest(request);
+        }
+
+        private static SceneAssemblyPlan CreateSynthesizedPlanFromRequest(LayoutSynthesisRequest request)
+        {
             Level0LayoutSynthesizer synthesizer = new Level0LayoutSynthesizer();
             LastSynthesisResult = synthesizer.Synthesize(request);
             LastSynthesisUsedFallback = LastSynthesisResult == null || !LastSynthesisResult.succeeded || LastSynthesisResult.plan == null;

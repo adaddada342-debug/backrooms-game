@@ -1,6 +1,8 @@
 using Backrooms.Atmosphere;
 using Backrooms.Atmosphere.Reports;
 using Backrooms.Grammar;
+using Backrooms.LayoutSynthesis.Landmarks;
+using Backrooms.LayoutSynthesis.Routes;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.SceneAssembly;
 using Backrooms.Validation;
@@ -39,6 +41,11 @@ namespace Backrooms.Debugging
         public int materialProfileCount;
         public bool atmosphereApplied;
         public bool soundscapeCreated;
+        public int routeLength;
+        public float routeComplexity;
+        public bool routeReachesTransition;
+        public int landmarkPlacementCount;
+        public bool mapNotePrototypeEnabled;
 
         public void Configure(
             LevelIdentityProfile newIdentity,
@@ -86,6 +93,11 @@ namespace Backrooms.Debugging
             materialProfileCount = 0;
             atmosphereApplied = false;
             soundscapeCreated = false;
+            routeLength = 0;
+            routeComplexity = 0f;
+            routeReachesTransition = false;
+            landmarkPlacementCount = 0;
+            mapNotePrototypeEnabled = false;
         }
 
         public void Configure(
@@ -123,6 +135,25 @@ namespace Backrooms.Debugging
             materialProfileCount = atmosphereReport.materialProfileCount;
             atmosphereApplied = atmosphereReport.renderSettingsApplied || atmosphereReport.fogApplied;
             soundscapeCreated = atmosphereReport.soundscapeRuntimeCreated;
+        }
+
+        public void Configure(
+            SceneAssemblyPlan plan,
+            AssemblyValidationReport newValidationReport,
+            RouteReadabilityReport readabilityReport,
+            AtmosphereApplicationReport atmosphereReport,
+            LayoutRouteAnnotation routeAnnotation,
+            LandmarkPlacementPlan landmarkPlacementPlan)
+        {
+            Configure(plan, newValidationReport, readabilityReport, atmosphereReport);
+
+            routeLength = routeAnnotation == null ? 0 : routeAnnotation.routeLength;
+            routeComplexity = routeAnnotation == null ? 0f : routeAnnotation.routeComplexity;
+            routeReachesTransition = routeAnnotation != null && routeAnnotation.reachesTransition;
+            landmarkPlacementCount = landmarkPlacementPlan == null || landmarkPlacementPlan.placements == null
+                ? 0
+                : landmarkPlacementPlan.placements.Count;
+            mapNotePrototypeEnabled = true;
         }
     }
 }

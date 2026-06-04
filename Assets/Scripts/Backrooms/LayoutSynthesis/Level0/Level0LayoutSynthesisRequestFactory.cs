@@ -36,5 +36,13 @@ namespace Backrooms.LayoutSynthesis.Level0
                 targetSceneName = "Level0_Local_Blockout"
             };
         }
+
+        public static LayoutSynthesisRequest CreateRequestForSeed(int seed)
+        {
+            LayoutSynthesisRequest request = CreateDefaultRequest();
+            request.seed = seed;
+            request.requestId = "level0_seed_" + seed;
+            return request;
+        }
     }
 }

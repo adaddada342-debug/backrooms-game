@@ -1,3 +1,4 @@
+using Backrooms.Soundscape.Assets;
 using UnityEngine;
 
 namespace Backrooms.Soundscape.Runtime
@@ -7,6 +8,7 @@ namespace Backrooms.Soundscape.Runtime
         public SoundscapePlan plan;
         public bool createAudioSourcesOnStart = true;
         public bool useGeneratedPlaceholderTones = false;
+        public SoundscapeClipLibrary clipLibrary;
 
         public void Configure(SoundscapePlan newPlan)
         {
@@ -39,9 +41,10 @@ namespace Backrooms.Soundscape.Runtime
                 sourceObject.transform.SetParent(transform);
                 sourceObject.transform.position = emitter.position;
                 AudioSource source = sourceObject.AddComponent<AudioSource>();
-                source.clip = null;
-                source.loop = emitter.loop;
-                source.volume = emitter.volume;
+                SoundscapeClipSlot slot = clipLibrary == null ? null : clipLibrary.FindByTag(emitter.soundTag);
+                source.clip = slot == null ? null : slot.clip;
+                source.loop = slot == null ? emitter.loop : slot.loop;
+                source.volume = slot == null ? emitter.volume : emitter.volume * slot.defaultVolume;
                 source.spatialBlend = 1f;
                 source.minDistance = emitter.minDistance;
                 source.maxDistance = emitter.maxDistance;

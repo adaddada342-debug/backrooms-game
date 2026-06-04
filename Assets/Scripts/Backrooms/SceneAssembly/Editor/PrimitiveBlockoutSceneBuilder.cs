@@ -7,13 +7,18 @@ using Backrooms.Atmosphere.Reports;
 using Backrooms.Atmosphere.Runtime;
 using Backrooms.Core;
 using Backrooms.Debugging;
+using Backrooms.EditorTools.Reports;
 using Backrooms.LevelPackages;
 using Backrooms.Landmarks;
 using Backrooms.Landmarks.Runtime;
+using Backrooms.LayoutSynthesis.Landmarks;
 using Backrooms.LayoutSynthesis.Gizmos;
 using Backrooms.LayoutSynthesis.Models;
+using Backrooms.LayoutSynthesis.Preview;
+using Backrooms.LayoutSynthesis.Routes;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.Loading;
+using Backrooms.Mapping.Runtime;
 using Backrooms.Materials;
 using Backrooms.Materials.Runtime;
 using Backrooms.Player;
@@ -40,11 +45,20 @@ namespace Backrooms.SceneAssembly.Editor
         private const string AtmosphereReportPath = "Assets/Data/Atmosphere/Reports/level0_atmosphere_application_report.json";
         private const string RoomAtmosphereTagsPath = "Assets/Data/Atmosphere/Reports/level0_room_atmosphere_tags.json";
         private const string SoundscapePlanPath = "Assets/Data/Soundscape/Reports/level0_soundscape_plan.json";
+        private const string RouteAnnotationPath = "Assets/Data/LayoutSynthesis/Routes/level0_route_annotation.json";
+        private const string LandmarkPlacementPath = "Assets/Data/LayoutSynthesis/Preview/level0_landmark_placement_plan.json";
+        private const string LayoutPreviewSummaryPath = "Assets/Data/LayoutSynthesis/Preview/level0_layout_preview_summary.json";
+        private const string Wave9ProductionReportPath = "Assets/Data/EditorTools/wave9_production_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
         {
-            SceneAssemblyPlan plan = PrimitiveLevel0BlockoutFactory.CreateSynthesizedDefaultPlan();
+            CreateSceneForSeed(1001);
+        }
+
+        public static void CreateSceneForSeed(int seed)
+        {
+            SceneAssemblyPlan plan = PrimitiveLevel0BlockoutFactory.CreateSynthesizedPlanForSeed(seed);
             WriteSynthesisReport(
                 PrimitiveLevel0BlockoutFactory.LastSynthesisResult,
                 PrimitiveLevel0BlockoutFactory.LastSynthesisUsedFallback);
@@ -75,6 +89,10 @@ namespace Backrooms.SceneAssembly.Editor
             atmosphereReport.roomAtmosphereTagCount = roomAtmosphereTags.Count;
             WriteRoomAtmosphereTags(roomAtmosphereTags);
             WriteSoundscapePlan(soundscapePlan);
+            LayoutRouteAnnotation routeAnnotation = LayoutRouteAnnotator.CreateMainRoute(plan);
+            LandmarkPlacementPlan landmarkPlacementPlan = LandmarkPlacementPlanner.CreatePlacementPlan(plan);
+            WriteRouteAnnotation(routeAnnotation);
+            WriteLandmarkPlacementPlan(landmarkPlacementPlan);
 
             GameObject geometryRoot = new GameObject("Blockout_Geometry");
             foreach (BlockoutRoomPlan room in plan.rooms)
@@ -100,13 +118,20 @@ namespace Backrooms.SceneAssembly.Editor
             }
 
             LayoutDebugGizmo layoutDebugGizmo = CreateLayoutDebugGizmo(plan);
-            CreateLandmarkPlaceholders(geometryRoot.transform, plan, landmarkMaterial, layoutDebugGizmo);
+            CreateRouteVisualizer(plan, routeAnnotation);
+            CreateLandmarkPlaceholders(geometryRoot.transform, plan, landmarkPlacementPlan, landmarkMaterial, layoutDebugGizmo);
 
             ValidatePlanHasBasicRoute(plan, result);
             AssemblyValidationReport validationReport = AssemblyValidator.Validate(plan);
             WriteValidationReport(validationReport);
             RouteReadabilityReport readabilityReport = RouteReadabilityScorer.Score(plan);
             WriteReadabilityReport(readabilityReport);
+            LayoutPreviewSummary previewSummary = LayoutPreviewSummary.From(
+                PrimitiveLevel0BlockoutFactory.LastSynthesisResult,
+                validationReport,
+                readabilityReport,
+                routeAnnotation);
+            WriteLayoutPreviewSummary(previewSummary);
             if (!validationReport.passed)
             {
                 Debug.LogWarning("Assembly validation failed for the generated Level 0 plan. The scene builder will continue unless scene assembly blockers are present.");
@@ -118,9 +143,9 @@ namespace Backrooms.SceneAssembly.Editor
             levelLoader.SetRegistry(registry);
             CreateSoundscapeRuntime(soundscapePlan, atmosphereReport);
             WriteAtmosphereReport(atmosphereReport);
-            CreateDebugObject(plan, validationReport, readabilityReport, atmosphereReport);
+            CreateDebugObject(plan, validationReport, readabilityReport, atmosphereReport, routeAnnotation, landmarkPlacementPlan);
 
-            CreatePlayer();
+            CreatePlayer(plan);
 
             foreach (BlockoutTransitionPlan transition in plan.transitions)
             {
@@ -146,10 +171,19 @@ namespace Backrooms.SceneAssembly.Editor
             }
 
             WriteAssemblyReport(result);
+            WriteWave9ProductionReport(
+                plan,
+                validationReport,
+                readabilityReport,
+                atmosphereReport,
+                routeAnnotation,
+                landmarkPlacementPlan,
+                materialLibrary,
+                soundscapePlan);
             AssetDatabase.Refresh();
 
             Debug.Log(
-                $"Level 0 local blockout scene created. Scene: {ScenePath}, saved: {saved}, report: {ReportPath}");
+                $"Level 0 local blockout scene created. Seed: {seed}, Scene: {ScenePath}, saved: {saved}, report: {ReportPath}");
             Debug.Log(
                 $"Assembly validation scores - Grammar: {validationReport.grammarScore:0.00}, Atmosphere: {validationReport.atmosphereScore:0.00}, Landmark: {validationReport.landmarkScore:0.00}, Identity: {validationReport.identityScore:0.00}, Route: {validationReport.routeScore:0.00}");
             Debug.Log($"Route readability score: {readabilityReport.totalScore:0.00}, passed: {readabilityReport.passed}");
@@ -477,9 +511,17 @@ namespace Backrooms.SceneAssembly.Editor
             return gizmo;
         }
 
+        private static void CreateRouteVisualizer(SceneAssemblyPlan plan, LayoutRouteAnnotation routeAnnotation)
+        {
+            GameObject routeObject = new GameObject("Route_Visualizer");
+            RouteVisualizer visualizer = routeObject.AddComponent<RouteVisualizer>();
+            visualizer.Configure(plan, routeAnnotation);
+        }
+
         private static void CreateLandmarkPlaceholders(
             Transform parent,
             SceneAssemblyPlan plan,
+            LandmarkPlacementPlan landmarkPlacementPlan,
             Material landmarkMaterial,
             LayoutDebugGizmo layoutDebugGizmo)
         {
@@ -489,23 +531,26 @@ namespace Backrooms.SceneAssembly.Editor
                 return;
             }
 
-            List<BlockoutRoomPlan> rooms = GetNonNullRooms(plan);
-            if (rooms.Count == 0)
+            if (landmarkPlacementPlan == null || landmarkPlacementPlan.placements == null || landmarkPlacementPlan.placements.Count == 0)
             {
-                Debug.LogWarning("No rooms were available for debug landmark placeholder placement.");
+                Debug.LogWarning("No node-bound landmark placement plan was available for debug placeholder creation.");
                 return;
             }
 
-            for (int i = 0; i < plan.landmarks.Count; i++)
+            foreach (LandmarkPlacement placement in landmarkPlacementPlan.placements)
             {
-                LandmarkProfile landmark = plan.landmarks[i];
+                if (placement == null)
+                {
+                    continue;
+                }
+
+                LandmarkProfile landmark = FindLandmark(plan, placement.landmarkId);
                 if (landmark == null)
                 {
                     continue;
                 }
 
-                BlockoutRoomPlan room = rooms[i % rooms.Count];
-                Vector3 position = CreateLandmarkPosition(room, i);
+                Vector3 position = placement.position;
                 GameObject placeholder = CreateLandmarkPrimitive(parent, landmark, position, landmarkMaterial);
                 LandmarkPlaceholder component = placeholder.AddComponent<LandmarkPlaceholder>();
                 component.Configure(landmark);
@@ -523,30 +568,22 @@ namespace Backrooms.SceneAssembly.Editor
             }
         }
 
-        private static List<BlockoutRoomPlan> GetNonNullRooms(SceneAssemblyPlan plan)
+        private static LandmarkProfile FindLandmark(SceneAssemblyPlan plan, string landmarkId)
         {
-            List<BlockoutRoomPlan> rooms = new List<BlockoutRoomPlan>();
-            if (plan.rooms == null)
+            if (plan == null || plan.landmarks == null || string.IsNullOrWhiteSpace(landmarkId))
             {
-                return rooms;
+                return null;
             }
 
-            foreach (BlockoutRoomPlan room in plan.rooms)
+            foreach (LandmarkProfile landmark in plan.landmarks)
             {
-                if (room != null)
+                if (landmark != null && string.Equals(landmark.landmarkId, landmarkId, StringComparison.OrdinalIgnoreCase))
                 {
-                    rooms.Add(room);
+                    return landmark;
                 }
             }
 
-            return rooms;
-        }
-
-        private static Vector3 CreateLandmarkPosition(BlockoutRoomPlan room, int index)
-        {
-            float offsetX = ((index % 3) - 1) * Mathf.Min(1.5f, room.size.x * 0.2f);
-            float offsetZ = ((index / 3) % 3 - 1) * Mathf.Min(1.5f, room.size.z * 0.2f);
-            return new Vector3(room.position.x + offsetX, room.position.y + 0.35f, room.position.z + offsetZ);
+            return null;
         }
 
         private static GameObject CreateLandmarkPrimitive(
@@ -603,7 +640,7 @@ namespace Backrooms.SceneAssembly.Editor
             return cube;
         }
 
-        private static void CreatePlayer()
+        private static void CreatePlayer(SceneAssemblyPlan plan)
         {
             GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             player.name = "Player";
@@ -629,6 +666,11 @@ namespace Backrooms.SceneAssembly.Editor
 
             SimpleFirstPersonController controller = player.AddComponent<SimpleFirstPersonController>();
             controller.SetCameraTransform(cameraObject.transform);
+
+            MapNotePlacementTester noteTester = player.AddComponent<MapNotePlacementTester>();
+            noteTester.playerCamera = camera;
+            noteTester.packageId = plan == null ? string.Empty : plan.packageId;
+            noteTester.localAreaId = plan == null ? string.Empty : plan.levelId;
         }
 
         private static void CreateTransitionTrigger(
@@ -661,11 +703,13 @@ namespace Backrooms.SceneAssembly.Editor
             SceneAssemblyPlan plan,
             AssemblyValidationReport validationReport,
             RouteReadabilityReport readabilityReport,
-            AtmosphereApplicationReport atmosphereReport)
+            AtmosphereApplicationReport atmosphereReport,
+            LayoutRouteAnnotation routeAnnotation,
+            LandmarkPlacementPlan landmarkPlacementPlan)
         {
             GameObject debugObject = new GameObject("Backrooms_Debug");
             Backrooms.Debugging.LevelDebugInfo debugInfo = debugObject.AddComponent<Backrooms.Debugging.LevelDebugInfo>();
-            debugInfo.Configure(plan, validationReport, readabilityReport, atmosphereReport);
+            debugInfo.Configure(plan, validationReport, readabilityReport, atmosphereReport, routeAnnotation, landmarkPlacementPlan);
         }
 
         private static List<BlockoutOpeningPlan> GetOpeningsForRoom(SceneAssemblyPlan plan, string roomId)
@@ -1051,6 +1095,70 @@ namespace Backrooms.SceneAssembly.Editor
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SoundscapePlanPath));
             File.WriteAllText(SoundscapePlanPath, JsonUtility.ToJson(plan, true));
+        }
+
+        private static void WriteRouteAnnotation(LayoutRouteAnnotation annotation)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(RouteAnnotationPath));
+            File.WriteAllText(RouteAnnotationPath, JsonUtility.ToJson(annotation, true));
+        }
+
+        private static void WriteLandmarkPlacementPlan(LandmarkPlacementPlan plan)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LandmarkPlacementPath));
+            File.WriteAllText(LandmarkPlacementPath, JsonUtility.ToJson(plan, true));
+        }
+
+        private static void WriteLayoutPreviewSummary(LayoutPreviewSummary summary)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LayoutPreviewSummaryPath));
+            File.WriteAllText(LayoutPreviewSummaryPath, JsonUtility.ToJson(summary, true));
+        }
+
+        private static void WriteWave9ProductionReport(
+            SceneAssemblyPlan plan,
+            AssemblyValidationReport validationReport,
+            RouteReadabilityReport readabilityReport,
+            AtmosphereApplicationReport atmosphereReport,
+            LayoutRouteAnnotation routeAnnotation,
+            LandmarkPlacementPlan landmarkPlacementPlan,
+            PrimitiveMaterialLibrary materialLibrary,
+            SoundscapePlan soundscapePlan)
+        {
+            Wave9ProductionReport report = new Wave9ProductionReport
+            {
+                reportId = "wave9_level0_production_report",
+                packageId = plan == null ? string.Empty : plan.packageId,
+                levelId = plan == null ? string.Empty : plan.levelId,
+                seed = plan == null ? 0 : plan.seed,
+                synthesisSucceeded = PrimitiveLevel0BlockoutFactory.LastSynthesisResult != null && PrimitiveLevel0BlockoutFactory.LastSynthesisResult.succeeded,
+                assemblyValidationPassed = validationReport != null && validationReport.passed,
+                readabilityPassed = readabilityReport != null && readabilityReport.passed,
+                atmosphereApplied = atmosphereReport != null && (atmosphereReport.renderSettingsApplied || atmosphereReport.fogApplied),
+                soundscapeCreated = atmosphereReport != null && atmosphereReport.soundscapeRuntimeCreated,
+                routeAnnotated = routeAnnotation != null && routeAnnotation.IsValid(),
+                landmarkPlacementsCreated = landmarkPlacementPlan != null && landmarkPlacementPlan.placements != null && landmarkPlacementPlan.placements.Count > 0,
+                mappingPrototypeEnabled = true,
+                roomCount = plan == null || plan.rooms == null ? 0 : plan.rooms.Count,
+                routeLength = routeAnnotation == null ? 0 : routeAnnotation.routeLength,
+                landmarkPlacementCount = landmarkPlacementPlan == null || landmarkPlacementPlan.placements == null ? 0 : landmarkPlacementPlan.placements.Count,
+                materialProfileCount = materialLibrary == null || materialLibrary.materials == null ? 0 : materialLibrary.materials.Count,
+                soundEmitterCount = soundscapePlan == null || soundscapePlan.emitters == null ? 0 : soundscapePlan.emitters.Count,
+                readabilityScore = readabilityReport == null ? 0f : readabilityReport.totalScore
+            };
+
+            if (PrimitiveLevel0BlockoutFactory.LastSynthesisUsedFallback)
+            {
+                report.AddWarning("Synthesis used the hardcoded fallback plan.");
+            }
+
+            if (routeAnnotation == null || !routeAnnotation.IsValid())
+            {
+                report.AddWarning("Route annotation is missing or did not reach transition_room.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(Wave9ProductionReportPath));
+            File.WriteAllText(Wave9ProductionReportPath, JsonUtility.ToJson(report, true));
         }
 
         private static void WriteSynthesisReport(LayoutSynthesisResult result, bool fallbackUsed)
