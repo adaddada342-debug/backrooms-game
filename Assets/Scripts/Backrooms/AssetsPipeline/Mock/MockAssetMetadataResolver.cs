@@ -122,9 +122,7 @@ namespace Backrooms.AssetsPipeline.Mock
 
         private static string BuildAssetId(string sourceUrl)
         {
-            string trimmed = sourceUrl
-                .Replace("mock://", string.Empty, StringComparison.OrdinalIgnoreCase)
-                .Replace("local://", string.Empty, StringComparison.OrdinalIgnoreCase);
+            string trimmed = StripKnownPrefix(StripKnownPrefix(sourceUrl, "mock://"), "local://");
 
             char[] chars = trimmed.ToCharArray();
             for (int i = 0; i < chars.Length; i++)
@@ -136,6 +134,18 @@ namespace Backrooms.AssetsPipeline.Mock
             }
 
             return string.IsNullOrWhiteSpace(trimmed) ? "mock_asset" : new string(chars).Trim('_');
+        }
+
+        private static string StripKnownPrefix(string value, string prefix)
+        {
+            if (string.IsNullOrEmpty(value) || string.IsNullOrEmpty(prefix))
+            {
+                return value ?? string.Empty;
+            }
+
+            return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? value.Substring(prefix.Length)
+                : value;
         }
 
         private static string BuildStableHash(string value)

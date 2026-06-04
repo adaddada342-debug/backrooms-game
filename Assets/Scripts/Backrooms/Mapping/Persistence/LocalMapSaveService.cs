@@ -58,6 +58,8 @@ namespace Backrooms.Mapping.Persistence
             MapLevelSaveData target = saveFile.GetOrCreateLevel(levelData.packageId, levelData.levelId, levelData.seed);
             target.discoveredRoomIds = levelData.discoveredRoomIds;
             target.notes = levelData.notes;
+            target.lastKnownRoomId = levelData.lastKnownRoomId;
+            target.lastKnownPlayerPosition = levelData.lastKnownPlayerPosition;
             target.updatedAtUtc = levelData.updatedAtUtc;
             Save(saveFile);
         }

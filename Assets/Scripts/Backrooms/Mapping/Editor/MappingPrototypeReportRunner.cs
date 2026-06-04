@@ -16,12 +16,12 @@ namespace Backrooms.Mapping.Editor
         {
             MappingPrototypeReport report = new MappingPrototypeReport
             {
-                featureName = "Wave 9 Mapping Note Placement Prototype",
+                featureName = "Wave 11 Mapping Discovery and Note Editing Prototype",
                 notePlacementKey = "N",
-                savesToDisk = false,
+                savesToDisk = true,
                 hasRuntimeMarker = true,
-                hasMapUi = false,
-                notes = "Runtime-only note markers for blockout testing. No persistence or UI yet."
+                hasMapUi = true,
+                notes = "Local-only mapping prototype with discovery, fog-of-war map state, persistent notes, and note editing/deleting UI."
             };
 
             Directory.CreateDirectory(Path.GetDirectoryName(ReportPath));

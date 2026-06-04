@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Backrooms.LayoutSynthesis.Landmarks;
 using Backrooms.Mapping.Data;
+using Backrooms.Mapping.Discovery;
 using Backrooms.Runtime.LevelContext;
 using Backrooms.SceneAssembly;
 using UnityEngine;
@@ -15,17 +16,35 @@ namespace Backrooms.Mapping.UI
             Rect mapRect,
             float padding)
         {
+            return Build(context, saveData, mapRect, padding, new MapDiscoverySettings());
+        }
+
+        public static MapViewModel Build(
+            GeneratedLevelRuntimeContext context,
+            MapLevelSaveData saveData,
+            Rect mapRect,
+            float padding,
+            MapDiscoverySettings settings)
+        {
             MapViewModel model = new MapViewModel();
             if (context == null || context.plan == null)
             {
                 return model;
             }
 
+            if (settings == null)
+            {
+                settings = new MapDiscoverySettings();
+            }
+
+            settings.ClampValues();
             model.packageId = context.packageId;
             model.levelId = context.levelId;
             model.seed = context.seed;
+            model.currentRoomId = saveData == null ? string.Empty : saveData.lastKnownRoomId;
             Bounds bounds = WorldToMapProjector.CalculateBounds(context.plan);
             Dictionary<string, Vector2> positions = new Dictionary<string, Vector2>();
+            Dictionary<string, bool> visibleByRoomId = new Dictionary<string, bool>();
 
             if (context.plan.rooms != null)
             {
@@ -38,7 +57,10 @@ namespace Backrooms.Mapping.UI
 
                     Vector2 mapPosition = WorldToMapProjector.Project(room.position, bounds, mapRect, padding);
                     positions[room.roomId] = mapPosition;
-                    bool discovered = saveData == null || saveData.HasDiscoveredRoom(room.roomId);
+                    bool discovered = saveData != null && saveData.HasDiscoveredRoom(room.roomId);
+                    bool isCurrentRoom = saveData != null && string.Equals(saveData.lastKnownRoomId, room.roomId, System.StringComparison.Ordinal);
+                    bool visibleOnMap = settings.showUndiscoveredRooms || discovered || isCurrentRoom;
+                    visibleByRoomId[room.roomId] = visibleOnMap;
                     if (discovered)
                     {
                         model.discoveredRoomCount++;
@@ -52,6 +74,8 @@ namespace Backrooms.Mapping.UI
                         isOnMainRoute = context.routeAnnotation != null && context.routeAnnotation.ContainsRoom(room.roomId),
                         discovered = discovered,
                         hasLandmark = HasLandmark(context.landmarkPlacementPlan, room.roomId),
+                        isCurrentRoom = isCurrentRoom,
+                        visibleOnMap = visibleOnMap,
                         noteCount = CountNotes(saveData, room.roomId)
                     });
                 }
@@ -64,6 +88,11 @@ namespace Backrooms.Mapping.UI
                 foreach (BlockoutConnectionPlan connection in context.plan.connections)
                 {
                     if (connection == null || !positions.ContainsKey(connection.fromRoomId) || !positions.ContainsKey(connection.toRoomId))
+                    {
+                        continue;
+                    }
+
+                    if (!IsRoomVisible(visibleByRoomId, connection.fromRoomId) || !IsRoomVisible(visibleByRoomId, connection.toRoomId))
                     {
                         continue;
                     }
@@ -91,6 +120,11 @@ namespace Backrooms.Mapping.UI
                         continue;
                     }
 
+                    if (!string.IsNullOrWhiteSpace(note.roomId) && !IsRoomVisible(visibleByRoomId, note.roomId))
+                    {
+                        continue;
+                    }
+
                     model.notes.Add(new MapNoteViewModel
                     {
                         noteId = note.noteId,
@@ -100,6 +134,12 @@ namespace Backrooms.Mapping.UI
                         uncertaintyLevel = note.uncertaintyLevel
                     });
                 }
+            }
+
+            if (saveData != null)
+            {
+                model.playerMapPosition = WorldToMapProjector.Project(saveData.lastKnownPlayerPosition, bounds, mapRect, padding);
+                model.hasPlayerPosition = saveData.lastKnownPlayerPosition != Vector3.zero || context.HasValidPlan();
             }
 
             return model;
@@ -127,6 +167,13 @@ namespace Backrooms.Mapping.UI
             }
 
             return count;
+        }
+
+        private static bool IsRoomVisible(Dictionary<string, bool> visibleByRoomId, string roomId)
+        {
+            return visibleByRoomId != null &&
+                   visibleByRoomId.TryGetValue(roomId, out bool visible) &&
+                   visible;
         }
     }
 }

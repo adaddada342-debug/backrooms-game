@@ -19,6 +19,8 @@ using Backrooms.LayoutSynthesis.Routes;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.Loading;
 using Backrooms.Mapping.Runtime;
+using Backrooms.Mapping.Compass;
+using Backrooms.Mapping.Discovery;
 using Backrooms.Mapping.Persistence;
 using Backrooms.Mapping.Reports;
 using Backrooms.Mapping.UI;
@@ -53,7 +55,7 @@ namespace Backrooms.SceneAssembly.Editor
         private const string LandmarkPlacementPath = "Assets/Data/LayoutSynthesis/Preview/level0_landmark_placement_plan.json";
         private const string LayoutPreviewSummaryPath = "Assets/Data/LayoutSynthesis/Preview/level0_layout_preview_summary.json";
         private const string Wave9ProductionReportPath = "Assets/Data/EditorTools/wave9_production_report.json";
-        private const string MappingSystemReportPath = "Assets/Data/Mapping/Reports/wave10_mapping_system_report.json";
+        private const string MappingSystemReportPath = "Assets/Data/Mapping/Reports/wave11_mapping_system_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
@@ -152,8 +154,9 @@ namespace Backrooms.SceneAssembly.Editor
             WriteAtmosphereReport(atmosphereReport);
             CreateDebugObject(plan, validationReport, readabilityReport, atmosphereReport, routeAnnotation, landmarkPlacementPlan);
 
-            CreatePlayer(plan, runtimeContext);
-            CreatePrototypeMapUi(runtimeContext);
+            PlayerRuntimeObjects playerObjects = CreatePlayer(plan, runtimeContext);
+            CreatePrototypeMapUi(runtimeContext, playerObjects.discoveryTracker);
+            CreatePrototypeCompass(runtimeContext, playerObjects.discoveryTracker, playerObjects.playerCamera);
 
             foreach (BlockoutTransitionPlan transition in plan.transitions)
             {
@@ -188,7 +191,7 @@ namespace Backrooms.SceneAssembly.Editor
                 landmarkPlacementPlan,
                 materialLibrary,
                 soundscapePlan);
-            WriteMappingSystemReport(plan, runtimeContext, landmarkPlacementPlan);
+            WriteMappingSystemReport(plan, runtimeContext, landmarkPlacementPlan, playerObjects.discoveryTracker);
             AssetDatabase.Refresh();
 
             Debug.Log(
@@ -651,7 +654,7 @@ namespace Backrooms.SceneAssembly.Editor
             return cube;
         }
 
-        private static void CreatePlayer(SceneAssemblyPlan plan, GeneratedLevelRuntimeContext runtimeContext)
+        private static PlayerRuntimeObjects CreatePlayer(SceneAssemblyPlan plan, GeneratedLevelRuntimeContext runtimeContext)
         {
             GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             player.name = "Player";
@@ -683,13 +686,41 @@ namespace Backrooms.SceneAssembly.Editor
             noteTester.packageId = plan == null ? string.Empty : plan.packageId;
             noteTester.localAreaId = plan == null ? string.Empty : plan.levelId;
             noteTester.levelContext = runtimeContext;
+
+            MapDiscoverySettings discoverySettings = new MapDiscoverySettings();
+            MapDiscoveryTracker discoveryTracker = player.AddComponent<MapDiscoveryTracker>();
+            discoveryTracker.levelContext = runtimeContext;
+            discoveryTracker.settings = discoverySettings;
+
+            return new PlayerRuntimeObjects
+            {
+                player = player,
+                playerCamera = camera,
+                noteTester = noteTester,
+                discoveryTracker = discoveryTracker,
+                discoverySettings = discoverySettings
+            };
         }
 
-        private static void CreatePrototypeMapUi(GeneratedLevelRuntimeContext runtimeContext)
+        private static void CreatePrototypeMapUi(GeneratedLevelRuntimeContext runtimeContext, MapDiscoveryTracker discoveryTracker)
         {
             GameObject mapObject = new GameObject("Prototype_Map_Controller");
             PrototypeMapCanvasController mapController = mapObject.AddComponent<PrototypeMapCanvasController>();
             mapController.levelContext = runtimeContext;
+            mapController.discoveryTracker = discoveryTracker;
+            mapController.discoverySettings = discoveryTracker == null ? new MapDiscoverySettings() : discoveryTracker.settings;
+        }
+
+        private static void CreatePrototypeCompass(
+            GeneratedLevelRuntimeContext runtimeContext,
+            MapDiscoveryTracker discoveryTracker,
+            Camera playerCamera)
+        {
+            GameObject compassObject = new GameObject("Prototype_Compass_Controller");
+            PrototypeCompassController compass = compassObject.AddComponent<PrototypeCompassController>();
+            compass.levelContext = runtimeContext;
+            compass.discoveryTracker = discoveryTracker;
+            compass.playerCamera = playerCamera;
         }
 
         private static void CreateTransitionTrigger(
@@ -1183,11 +1214,12 @@ namespace Backrooms.SceneAssembly.Editor
         private static void WriteMappingSystemReport(
             SceneAssemblyPlan plan,
             GeneratedLevelRuntimeContext runtimeContext,
-            LandmarkPlacementPlan landmarkPlacementPlan)
+            LandmarkPlacementPlan landmarkPlacementPlan,
+            MapDiscoveryTracker discoveryTracker)
         {
             MappingSystemReport report = new MappingSystemReport
             {
-                reportId = "wave10_mapping_system_report",
+                reportId = "wave11_mapping_system_report",
                 packageId = plan == null ? string.Empty : plan.packageId,
                 levelId = plan == null ? string.Empty : plan.levelId,
                 seed = plan == null ? 0 : plan.seed,
@@ -1195,6 +1227,10 @@ namespace Backrooms.SceneAssembly.Editor
                 mapUiCreated = true,
                 notePersistenceEnabled = true,
                 localSavePathAvailable = !string.IsNullOrWhiteSpace(LocalMapSaveService.GetSavePath()),
+                discoveryTrackerCreated = discoveryTracker != null,
+                fogOfWarEnabled = discoveryTracker != null && discoveryTracker.settings != null && discoveryTracker.settings.dimUndiscoveredRooms,
+                noteEditingEnabled = true,
+                compassCreated = true,
                 roomCount = plan == null || plan.rooms == null ? 0 : plan.rooms.Count,
                 connectionCount = plan == null || plan.connections == null ? 0 : plan.connections.Count,
                 landmarkPlacementCount = landmarkPlacementPlan == null || landmarkPlacementPlan.placements == null ? 0 : landmarkPlacementPlan.placements.Count,
@@ -1214,6 +1250,15 @@ namespace Backrooms.SceneAssembly.Editor
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SynthesisReportPath));
             File.WriteAllText(SynthesisReportPath, JsonUtility.ToJson(LayoutSynthesisReport.FromResult(result, fallbackUsed), true));
+        }
+
+        private class PlayerRuntimeObjects
+        {
+            public GameObject player;
+            public Camera playerCamera;
+            public MapNotePlacementTester noteTester;
+            public MapDiscoveryTracker discoveryTracker;
+            public MapDiscoverySettings discoverySettings;
         }
 
         [Serializable]

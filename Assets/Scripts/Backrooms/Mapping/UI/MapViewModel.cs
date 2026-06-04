@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Backrooms.Mapping.UI
 {
@@ -14,5 +15,8 @@ namespace Backrooms.Mapping.UI
         public List<MapNoteViewModel> notes = new List<MapNoteViewModel>();
         public int discoveredRoomCount;
         public int totalRoomCount;
+        public string currentRoomId;
+        public Vector2 playerMapPosition;
+        public bool hasPlayerPosition;
     }
 }

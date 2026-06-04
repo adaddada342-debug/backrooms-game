@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Backrooms.Mapping.Data
 {
@@ -12,6 +13,8 @@ namespace Backrooms.Mapping.Data
         public int seed;
         public List<string> discoveredRoomIds = new List<string>();
         public List<MapNoteSaveData> notes = new List<MapNoteSaveData>();
+        public string lastKnownRoomId;
+        public Vector3 lastKnownPlayerPosition;
         public string updatedAtUtc;
 
         public bool HasDiscoveredRoom(string roomId)
@@ -94,6 +97,18 @@ namespace Backrooms.Mapping.Data
             }
 
             return false;
+        }
+
+        public void SetLastKnownRoom(string roomId)
+        {
+            lastKnownRoomId = roomId ?? string.Empty;
+            updatedAtUtc = DateTime.UtcNow.ToString("o");
+        }
+
+        public void SetLastKnownPlayerPosition(Vector3 position)
+        {
+            lastKnownPlayerPosition = position;
+            updatedAtUtc = DateTime.UtcNow.ToString("o");
         }
     }
 }

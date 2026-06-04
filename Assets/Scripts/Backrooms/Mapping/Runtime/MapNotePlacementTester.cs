@@ -18,6 +18,8 @@ namespace Backrooms.Mapping.Runtime
         public bool persistNotes = true;
         public MapLevelSaveData currentLevelSave;
 
+        public event Action<MapNoteSaveData> NotePlaced;
+
         private void Start()
         {
             if (levelContext == null)
@@ -99,10 +101,14 @@ namespace Backrooms.Mapping.Runtime
                 if (nearestRoom != null)
                 {
                     currentLevelSave.MarkRoomDiscovered(nearestRoom.roomId);
+                    currentLevelSave.SetLastKnownRoom(nearestRoom.roomId);
                 }
 
-                currentLevelSave.AddOrUpdateNote(MapNoteRuntimeUtility.ToSaveData(note, roomId));
+                currentLevelSave.SetLastKnownPlayerPosition(position);
+                MapNoteSaveData saveData = MapNoteRuntimeUtility.ToSaveData(note, roomId);
+                currentLevelSave.AddOrUpdateNote(saveData);
                 LocalMapSaveService.SaveLevel(currentLevelSave);
+                NotePlaced?.Invoke(saveData);
             }
 
             CreateMarker(note);

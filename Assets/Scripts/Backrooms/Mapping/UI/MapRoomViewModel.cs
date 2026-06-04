@@ -12,6 +12,8 @@ namespace Backrooms.Mapping.UI
         public bool isOnMainRoute;
         public bool discovered;
         public bool hasLandmark;
+        public bool isCurrentRoom;
+        public bool visibleOnMap;
         public int noteCount;
     }
 }

@@ -14,6 +14,10 @@ namespace Backrooms.Mapping.Reports
         public bool mapUiCreated;
         public bool notePersistenceEnabled;
         public bool localSavePathAvailable;
+        public bool discoveryTrackerCreated;
+        public bool fogOfWarEnabled;
+        public bool noteEditingEnabled;
+        public bool compassCreated;
         public int roomCount;
         public int connectionCount;
         public int landmarkPlacementCount;
