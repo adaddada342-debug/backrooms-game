@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Backrooms.Atmosphere;
+using Backrooms.Atmosphere.Reports;
+using Backrooms.Atmosphere.Runtime;
 using Backrooms.Core;
 using Backrooms.Debugging;
 using Backrooms.LevelPackages;
@@ -12,8 +14,12 @@ using Backrooms.LayoutSynthesis.Gizmos;
 using Backrooms.LayoutSynthesis.Models;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.Loading;
+using Backrooms.Materials;
+using Backrooms.Materials.Runtime;
 using Backrooms.Player;
 using Backrooms.SceneAssembly.Primitive;
+using Backrooms.Soundscape;
+using Backrooms.Soundscape.Runtime;
 using Backrooms.Transitions;
 using Backrooms.Validation;
 using UnityEditor;
@@ -31,6 +37,9 @@ namespace Backrooms.SceneAssembly.Editor
         private const string ValidationReportPath = "Assets/Data/SceneAssembly/Reports/level0_validation_report.json";
         private const string SynthesisReportPath = "Assets/Data/LayoutSynthesis/Reports/level0_synthesis_report.json";
         private const string ReadabilityReportPath = "Assets/Data/LayoutSynthesis/ReadabilityReports/level0_readability_report.json";
+        private const string AtmosphereReportPath = "Assets/Data/Atmosphere/Reports/level0_atmosphere_application_report.json";
+        private const string RoomAtmosphereTagsPath = "Assets/Data/Atmosphere/Reports/level0_room_atmosphere_tags.json";
+        private const string SoundscapePlanPath = "Assets/Data/Soundscape/Reports/level0_soundscape_plan.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
@@ -50,14 +59,22 @@ namespace Backrooms.SceneAssembly.Editor
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             scene.name = plan.sceneName;
 
-            Material wallMaterial = CreateMaterial("Blockout_SicklyYellow_Wall", new Color(0.78f, 0.73f, 0.43f));
-            Material floorMaterial = CreateMaterial("Blockout_DampCarpet_Floor", new Color(0.42f, 0.38f, 0.25f));
-            Material ceilingMaterial = CreateMaterial("Blockout_CeilingTile", new Color(0.68f, 0.67f, 0.58f));
-            Material lightMaterial = CreateMaterial("Blockout_Fluorescent_Light", new Color(0.82f, 0.95f, 0.83f));
-            Material openingMarkerMaterial = CreateTransparentMaterial("Blockout_Opening_Debug", new Color(0.1f, 0.8f, 0.45f, 0.28f));
-            Material triggerMarkerMaterial = CreateTransparentMaterial("Blockout_Transition_Trigger_Debug", new Color(0.2f, 0.65f, 1f, 0.35f));
-            Material landmarkMaterial = CreateMaterial("Blockout_Landmark_Debug", new Color(1f, 0.28f, 0.72f));
-            AtmosphereApplier.ApplyBasicAtmosphere(plan.atmosphere);
+            PrimitiveMaterialLibrary materialLibrary = Level0MaterialLibraryFactory.CreateDefaultLevel0Library();
+            Dictionary<MaterialRole, Material> roleMaterials = PrimitiveMaterialBuilder.BuildRoleMap(materialLibrary);
+            Material wallMaterial = GetRoleMaterial(roleMaterials, MaterialRole.Wall, new Color(0.78f, 0.73f, 0.43f));
+            Material floorMaterial = GetRoleMaterial(roleMaterials, MaterialRole.Floor, new Color(0.42f, 0.38f, 0.25f));
+            Material connectorMaterial = GetRoleMaterial(roleMaterials, MaterialRole.Connector, new Color(0.34f, 0.32f, 0.22f));
+            Material ceilingMaterial = GetRoleMaterial(roleMaterials, MaterialRole.Ceiling, new Color(0.68f, 0.67f, 0.58f));
+            Material lightMaterial = GetRoleMaterial(roleMaterials, MaterialRole.Light, new Color(0.82f, 0.95f, 0.83f));
+            Material openingMarkerMaterial = GetRoleMaterial(roleMaterials, MaterialRole.OpeningDebug, new Color(0.1f, 0.8f, 0.45f, 0.28f));
+            Material triggerMarkerMaterial = GetRoleMaterial(roleMaterials, MaterialRole.TransitionDebug, new Color(0.2f, 0.65f, 1f, 0.35f));
+            Material landmarkMaterial = GetRoleMaterial(roleMaterials, MaterialRole.LandmarkDebug, new Color(1f, 0.28f, 0.72f));
+            List<RoomAtmosphereTag> roomAtmosphereTags = RoomAtmospherePlanner.CreateRoomTags(plan);
+            SoundscapePlan soundscapePlan = Level0SoundscapeFactory.CreatePlan(plan);
+            AtmosphereApplicationReport atmosphereReport = AtmosphereApplier.ApplyToScene(plan, materialLibrary, soundscapePlan);
+            atmosphereReport.roomAtmosphereTagCount = roomAtmosphereTags.Count;
+            WriteRoomAtmosphereTags(roomAtmosphereTags);
+            WriteSoundscapePlan(soundscapePlan);
 
             GameObject geometryRoot = new GameObject("Blockout_Geometry");
             foreach (BlockoutRoomPlan room in plan.rooms)
@@ -74,12 +91,12 @@ namespace Backrooms.SceneAssembly.Editor
 
             foreach (BlockoutConnectionPlan connection in plan.connections)
             {
-                CreateConnection(geometryRoot.transform, connection, wallMaterial, floorMaterial, ceilingMaterial);
+                CreateConnection(geometryRoot.transform, connection, wallMaterial, connectorMaterial, ceilingMaterial);
             }
 
             foreach (BlockoutLightPlan lightPlan in plan.lights)
             {
-                CreateLightBar(geometryRoot.transform, lightPlan, lightMaterial);
+                CreateLightBar(geometryRoot.transform, lightPlan, lightMaterial, plan.atmosphere);
             }
 
             LayoutDebugGizmo layoutDebugGizmo = CreateLayoutDebugGizmo(plan);
@@ -99,7 +116,9 @@ namespace Backrooms.SceneAssembly.Editor
             LevelLoader levelLoader = runtimeRoot.AddComponent<LevelLoader>();
             LevelPackageRegistry registry = CreateOrUpdateRegistry(plan);
             levelLoader.SetRegistry(registry);
-            CreateDebugObject(plan, validationReport, readabilityReport);
+            CreateSoundscapeRuntime(soundscapePlan, atmosphereReport);
+            WriteAtmosphereReport(atmosphereReport);
+            CreateDebugObject(plan, validationReport, readabilityReport, atmosphereReport);
 
             CreatePlayer();
 
@@ -379,7 +398,11 @@ namespace Backrooms.SceneAssembly.Editor
                 : Mathf.Max(opening.size.x, opening.size.z);
         }
 
-        private static void CreateLightBar(Transform parent, BlockoutLightPlan lightPlan, Material lightMaterial)
+        private static void CreateLightBar(
+            Transform parent,
+            BlockoutLightPlan lightPlan,
+            Material lightMaterial,
+            AtmosphereProfile atmosphere)
         {
             GameObject bar = CreateCube(parent, lightPlan.lightId, lightPlan.position, lightPlan.size, lightMaterial);
             Light light = bar.AddComponent<Light>();
@@ -387,6 +410,63 @@ namespace Backrooms.SceneAssembly.Editor
             light.intensity = lightPlan.intensity;
             light.range = 7f;
             light.color = new Color(0.86f, 1f, 0.84f);
+
+            FluorescentFlicker flicker = bar.AddComponent<FluorescentFlicker>();
+            flicker.targetLight = light;
+            flicker.targetRenderer = bar.GetComponent<Renderer>();
+            flicker.baseIntensity = lightPlan.intensity;
+            flicker.flickerChancePerSecond = atmosphere == null ? 0.08f : atmosphere.flickerChance;
+            flicker.deterministic = true;
+            flicker.seed = StableHash(lightPlan.lightId);
+        }
+
+        private static int StableHash(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                int hash = 17;
+                for (int i = 0; i < value.Length; i++)
+                {
+                    hash = hash * 31 + value[i];
+                }
+
+                return hash;
+            }
+        }
+
+        private static Material GetRoleMaterial(
+            Dictionary<MaterialRole, Material> roleMaterials,
+            MaterialRole role,
+            Color fallbackColor)
+        {
+            Material material;
+            if (roleMaterials != null &&
+                roleMaterials.TryGetValue(role, out material) &&
+                material != null)
+            {
+                return material;
+            }
+
+            return CreateMaterial("Fallback_" + role, fallbackColor);
+        }
+
+        private static void CreateSoundscapeRuntime(
+            SoundscapePlan soundscapePlan,
+            AtmosphereApplicationReport atmosphereReport)
+        {
+            GameObject soundscapeObject = new GameObject("Backrooms_Soundscape");
+            SoundscapeRuntime runtime = soundscapeObject.AddComponent<SoundscapeRuntime>();
+            runtime.Configure(soundscapePlan);
+
+            if (atmosphereReport != null)
+            {
+                atmosphereReport.soundscapeRuntimeCreated = true;
+            }
         }
 
         private static LayoutDebugGizmo CreateLayoutDebugGizmo(SceneAssemblyPlan plan)
@@ -580,11 +660,12 @@ namespace Backrooms.SceneAssembly.Editor
         private static void CreateDebugObject(
             SceneAssemblyPlan plan,
             AssemblyValidationReport validationReport,
-            RouteReadabilityReport readabilityReport)
+            RouteReadabilityReport readabilityReport,
+            AtmosphereApplicationReport atmosphereReport)
         {
             GameObject debugObject = new GameObject("Backrooms_Debug");
             Backrooms.Debugging.LevelDebugInfo debugInfo = debugObject.AddComponent<Backrooms.Debugging.LevelDebugInfo>();
-            debugInfo.Configure(plan, validationReport, readabilityReport);
+            debugInfo.Configure(plan, validationReport, readabilityReport, atmosphereReport);
         }
 
         private static List<BlockoutOpeningPlan> GetOpeningsForRoom(SceneAssemblyPlan plan, string roomId)
@@ -954,10 +1035,34 @@ namespace Backrooms.SceneAssembly.Editor
             File.WriteAllText(ReadabilityReportPath, JsonUtility.ToJson(report, true));
         }
 
+        private static void WriteAtmosphereReport(AtmosphereApplicationReport report)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(AtmosphereReportPath));
+            File.WriteAllText(AtmosphereReportPath, JsonUtility.ToJson(report, true));
+        }
+
+        private static void WriteRoomAtmosphereTags(List<RoomAtmosphereTag> tags)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(RoomAtmosphereTagsPath));
+            File.WriteAllText(RoomAtmosphereTagsPath, JsonUtility.ToJson(new RoomAtmosphereTagList { tags = tags }, true));
+        }
+
+        private static void WriteSoundscapePlan(SoundscapePlan plan)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SoundscapePlanPath));
+            File.WriteAllText(SoundscapePlanPath, JsonUtility.ToJson(plan, true));
+        }
+
         private static void WriteSynthesisReport(LayoutSynthesisResult result, bool fallbackUsed)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SynthesisReportPath));
             File.WriteAllText(SynthesisReportPath, JsonUtility.ToJson(LayoutSynthesisReport.FromResult(result, fallbackUsed), true));
+        }
+
+        [Serializable]
+        private class RoomAtmosphereTagList
+        {
+            public List<RoomAtmosphereTag> tags = new List<RoomAtmosphereTag>();
         }
     }
 }

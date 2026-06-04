@@ -1,4 +1,5 @@
 using Backrooms.Atmosphere;
+using Backrooms.Atmosphere.Reports;
 using Backrooms.Grammar;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.SceneAssembly;
@@ -33,6 +34,11 @@ namespace Backrooms.Debugging
         public int landmarkCount;
         public bool readabilityPassed;
         public float readabilityScore;
+        public int roomAtmosphereTagCount;
+        public int soundEmitterCount;
+        public int materialProfileCount;
+        public bool atmosphereApplied;
+        public bool soundscapeCreated;
 
         public void Configure(
             LevelIdentityProfile newIdentity,
@@ -75,6 +81,11 @@ namespace Backrooms.Debugging
             landmarkCount = plan == null || plan.landmarks == null ? 0 : plan.landmarks.Count;
             readabilityPassed = false;
             readabilityScore = 0f;
+            roomAtmosphereTagCount = 0;
+            soundEmitterCount = 0;
+            materialProfileCount = 0;
+            atmosphereApplied = false;
+            soundscapeCreated = false;
         }
 
         public void Configure(
@@ -91,6 +102,27 @@ namespace Backrooms.Debugging
 
             readabilityPassed = readabilityReport != null && readabilityReport.passed;
             readabilityScore = readabilityReport == null ? 0f : readabilityReport.totalScore;
+        }
+
+        public void Configure(
+            SceneAssemblyPlan plan,
+            AssemblyValidationReport newValidationReport,
+            RouteReadabilityReport readabilityReport,
+            AtmosphereApplicationReport atmosphereReport)
+        {
+            Configure(plan, newValidationReport, readabilityReport);
+
+            if (atmosphereReport == null)
+            {
+                return;
+            }
+
+            atmosphereId = atmosphereReport.atmosphereId;
+            roomAtmosphereTagCount = atmosphereReport.roomAtmosphereTagCount;
+            soundEmitterCount = atmosphereReport.soundEmitterCount;
+            materialProfileCount = atmosphereReport.materialProfileCount;
+            atmosphereApplied = atmosphereReport.renderSettingsApplied || atmosphereReport.fogApplied;
+            soundscapeCreated = atmosphereReport.soundscapeRuntimeCreated;
         }
     }
 }
