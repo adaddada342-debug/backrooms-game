@@ -6,7 +6,11 @@ using Backrooms.Atmosphere;
 using Backrooms.Core;
 using Backrooms.Debugging;
 using Backrooms.LevelPackages;
+using Backrooms.Landmarks;
+using Backrooms.Landmarks.Runtime;
+using Backrooms.LayoutSynthesis.Gizmos;
 using Backrooms.LayoutSynthesis.Models;
+using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.Loading;
 using Backrooms.Player;
 using Backrooms.SceneAssembly.Primitive;
@@ -26,6 +30,7 @@ namespace Backrooms.SceneAssembly.Editor
         private const string ReportPath = "Assets/Data/SceneAssembly/Reports/level0_local_blockout_assembly_report.json";
         private const string ValidationReportPath = "Assets/Data/SceneAssembly/Reports/level0_validation_report.json";
         private const string SynthesisReportPath = "Assets/Data/LayoutSynthesis/Reports/level0_synthesis_report.json";
+        private const string ReadabilityReportPath = "Assets/Data/LayoutSynthesis/ReadabilityReports/level0_readability_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
@@ -51,6 +56,7 @@ namespace Backrooms.SceneAssembly.Editor
             Material lightMaterial = CreateMaterial("Blockout_Fluorescent_Light", new Color(0.82f, 0.95f, 0.83f));
             Material openingMarkerMaterial = CreateTransparentMaterial("Blockout_Opening_Debug", new Color(0.1f, 0.8f, 0.45f, 0.28f));
             Material triggerMarkerMaterial = CreateTransparentMaterial("Blockout_Transition_Trigger_Debug", new Color(0.2f, 0.65f, 1f, 0.35f));
+            Material landmarkMaterial = CreateMaterial("Blockout_Landmark_Debug", new Color(1f, 0.28f, 0.72f));
             AtmosphereApplier.ApplyBasicAtmosphere(plan.atmosphere);
 
             GameObject geometryRoot = new GameObject("Blockout_Geometry");
@@ -76,9 +82,14 @@ namespace Backrooms.SceneAssembly.Editor
                 CreateLightBar(geometryRoot.transform, lightPlan, lightMaterial);
             }
 
+            LayoutDebugGizmo layoutDebugGizmo = CreateLayoutDebugGizmo(plan);
+            CreateLandmarkPlaceholders(geometryRoot.transform, plan, landmarkMaterial, layoutDebugGizmo);
+
             ValidatePlanHasBasicRoute(plan, result);
             AssemblyValidationReport validationReport = AssemblyValidator.Validate(plan);
             WriteValidationReport(validationReport);
+            RouteReadabilityReport readabilityReport = RouteReadabilityScorer.Score(plan);
+            WriteReadabilityReport(readabilityReport);
             if (!validationReport.passed)
             {
                 Debug.LogWarning("Assembly validation failed for the generated Level 0 plan. The scene builder will continue unless scene assembly blockers are present.");
@@ -88,7 +99,7 @@ namespace Backrooms.SceneAssembly.Editor
             LevelLoader levelLoader = runtimeRoot.AddComponent<LevelLoader>();
             LevelPackageRegistry registry = CreateOrUpdateRegistry(plan);
             levelLoader.SetRegistry(registry);
-            CreateDebugObject(plan, validationReport);
+            CreateDebugObject(plan, validationReport, readabilityReport);
 
             CreatePlayer();
 
@@ -122,6 +133,7 @@ namespace Backrooms.SceneAssembly.Editor
                 $"Level 0 local blockout scene created. Scene: {ScenePath}, saved: {saved}, report: {ReportPath}");
             Debug.Log(
                 $"Assembly validation scores - Grammar: {validationReport.grammarScore:0.00}, Atmosphere: {validationReport.atmosphereScore:0.00}, Landmark: {validationReport.landmarkScore:0.00}, Identity: {validationReport.identityScore:0.00}, Route: {validationReport.routeScore:0.00}");
+            Debug.Log($"Route readability score: {readabilityReport.totalScore:0.00}, passed: {readabilityReport.passed}");
         }
 
         private static void CreateRoom(
@@ -146,26 +158,10 @@ namespace Backrooms.SceneAssembly.Editor
             CreateCube(root.transform, room.roomId + "_floor", new Vector3(center.x, floorY, center.z), new Vector3(size.x, wallThickness, size.z), floorMaterial);
             CreateCube(root.transform, room.roomId + "_ceiling", new Vector3(center.x, ceilingY, center.z), new Vector3(size.x, wallThickness, size.z), ceilingMaterial);
 
-            // Wave 4.1 primitive simplification: walls with openings are omitted instead of cut with boolean geometry.
-            if (!HasOpeningOnWall(openings, "north"))
-            {
-                CreateCube(root.transform, room.roomId + "_wall_north_solid", new Vector3(center.x, wallY, center.z + size.z * 0.5f), new Vector3(size.x, size.y, wallThickness), wallMaterial);
-            }
-
-            if (!HasOpeningOnWall(openings, "south"))
-            {
-                CreateCube(root.transform, room.roomId + "_wall_south_solid", new Vector3(center.x, wallY, center.z - size.z * 0.5f), new Vector3(size.x, size.y, wallThickness), wallMaterial);
-            }
-
-            if (!HasOpeningOnWall(openings, "east"))
-            {
-                CreateCube(root.transform, room.roomId + "_wall_east_solid", new Vector3(center.x + size.x * 0.5f, wallY, center.z), new Vector3(wallThickness, size.y, size.z), wallMaterial);
-            }
-
-            if (!HasOpeningOnWall(openings, "west"))
-            {
-                CreateCube(root.transform, room.roomId + "_wall_west_solid", new Vector3(center.x - size.x * 0.5f, wallY, center.z), new Vector3(wallThickness, size.y, size.z), wallMaterial);
-            }
+            CreateSegmentedWall(root.transform, room, openings, "north", wallMaterial, wallThickness);
+            CreateSegmentedWall(root.transform, room, openings, "south", wallMaterial, wallThickness);
+            CreateSegmentedWall(root.transform, room, openings, "east", wallMaterial, wallThickness);
+            CreateSegmentedWall(root.transform, room, openings, "west", wallMaterial, wallThickness);
 
             foreach (BlockoutOpeningPlan opening in openings)
             {
@@ -192,6 +188,197 @@ namespace Backrooms.SceneAssembly.Editor
             CreateCube(root.transform, connection.connectionId + "_connector_ceiling", new Vector3(center.x, center.y + size.y, center.z), new Vector3(size.x, slabThickness, size.z), ceilingMaterial);
         }
 
+        private static void CreateSegmentedWall(
+            Transform parent,
+            BlockoutRoomPlan room,
+            List<BlockoutOpeningPlan> openings,
+            string directionHint,
+            Material wallMaterial,
+            float wallThickness)
+        {
+            Vector3 center = room.position;
+            Vector3 size = room.size;
+            float wallY = center.y + size.y * 0.5f;
+            BlockoutOpeningPlan opening = GetFirstOpeningOnWall(openings, directionHint);
+
+            if (opening == null)
+            {
+                CreateSolidWall(parent, room.roomId + "_wall_" + directionHint + "_solid", center, size, directionHint, wallMaterial, wallThickness, wallY);
+                return;
+            }
+
+            // Wave 7 keeps this intentionally simple: if multiple openings share one wall, the first one drives the wall gaps.
+            if (directionHint == "north" || directionHint == "south")
+            {
+                float wallZ = directionHint == "north" ? center.z + size.z * 0.5f : center.z - size.z * 0.5f;
+                float leftEdge = center.x - size.x * 0.5f;
+                float rightEdge = center.x + size.x * 0.5f;
+                float openingWidth = Mathf.Max(OpeningAxisWidth(opening, directionHint), 0.2f);
+                float gapStart = Mathf.Clamp(opening.position.x - openingWidth * 0.5f, leftEdge, rightEdge);
+                float gapEnd = Mathf.Clamp(opening.position.x + openingWidth * 0.5f, leftEdge, rightEdge);
+
+                CreateHorizontalWallSegment(parent, room.roomId, directionHint, "left", leftEdge, gapStart, wallZ, center.y, size.y, wallMaterial, wallThickness);
+                CreateHorizontalWallSegment(parent, room.roomId, directionHint, "right", gapEnd, rightEdge, wallZ, center.y, size.y, wallMaterial, wallThickness);
+                CreateHorizontalTopSegment(parent, room.roomId, directionHint, opening.position.x, openingWidth, wallZ, center.y, size.y, opening.size.y, wallMaterial, wallThickness);
+            }
+            else
+            {
+                float wallX = directionHint == "east" ? center.x + size.x * 0.5f : center.x - size.x * 0.5f;
+                float nearEdge = center.z - size.z * 0.5f;
+                float farEdge = center.z + size.z * 0.5f;
+                float openingWidth = Mathf.Max(OpeningAxisWidth(opening, directionHint), 0.2f);
+                float gapStart = Mathf.Clamp(opening.position.z - openingWidth * 0.5f, nearEdge, farEdge);
+                float gapEnd = Mathf.Clamp(opening.position.z + openingWidth * 0.5f, nearEdge, farEdge);
+
+                CreateVerticalWallSegment(parent, room.roomId, directionHint, "near", wallX, nearEdge, gapStart, center.y, size.y, wallMaterial, wallThickness);
+                CreateVerticalWallSegment(parent, room.roomId, directionHint, "far", wallX, gapEnd, farEdge, center.y, size.y, wallMaterial, wallThickness);
+                CreateVerticalTopSegment(parent, room.roomId, directionHint, wallX, opening.position.z, openingWidth, center.y, size.y, opening.size.y, wallMaterial, wallThickness);
+            }
+        }
+
+        private static void CreateSolidWall(
+            Transform parent,
+            string name,
+            Vector3 center,
+            Vector3 size,
+            string directionHint,
+            Material wallMaterial,
+            float wallThickness,
+            float wallY)
+        {
+            if (directionHint == "north")
+            {
+                CreateCube(parent, name, new Vector3(center.x, wallY, center.z + size.z * 0.5f), new Vector3(size.x, size.y, wallThickness), wallMaterial);
+            }
+            else if (directionHint == "south")
+            {
+                CreateCube(parent, name, new Vector3(center.x, wallY, center.z - size.z * 0.5f), new Vector3(size.x, size.y, wallThickness), wallMaterial);
+            }
+            else if (directionHint == "east")
+            {
+                CreateCube(parent, name, new Vector3(center.x + size.x * 0.5f, wallY, center.z), new Vector3(wallThickness, size.y, size.z), wallMaterial);
+            }
+            else if (directionHint == "west")
+            {
+                CreateCube(parent, name, new Vector3(center.x - size.x * 0.5f, wallY, center.z), new Vector3(wallThickness, size.y, size.z), wallMaterial);
+            }
+        }
+
+        private static void CreateHorizontalWallSegment(
+            Transform parent,
+            string roomId,
+            string directionHint,
+            string segmentName,
+            float startX,
+            float endX,
+            float wallZ,
+            float floorY,
+            float height,
+            Material wallMaterial,
+            float wallThickness)
+        {
+            float segmentWidth = endX - startX;
+            if (segmentWidth <= 0.2f)
+            {
+                return;
+            }
+
+            CreateCube(
+                parent,
+                roomId + "_wall_" + directionHint + "_" + segmentName,
+                new Vector3(startX + segmentWidth * 0.5f, floorY + height * 0.5f, wallZ),
+                new Vector3(segmentWidth, height, wallThickness),
+                wallMaterial);
+        }
+
+        private static void CreateVerticalWallSegment(
+            Transform parent,
+            string roomId,
+            string directionHint,
+            string segmentName,
+            float wallX,
+            float startZ,
+            float endZ,
+            float floorY,
+            float height,
+            Material wallMaterial,
+            float wallThickness)
+        {
+            float segmentLength = endZ - startZ;
+            if (segmentLength <= 0.2f)
+            {
+                return;
+            }
+
+            CreateCube(
+                parent,
+                roomId + "_wall_" + directionHint + "_" + segmentName,
+                new Vector3(wallX, floorY + height * 0.5f, startZ + segmentLength * 0.5f),
+                new Vector3(wallThickness, height, segmentLength),
+                wallMaterial);
+        }
+
+        private static void CreateHorizontalTopSegment(
+            Transform parent,
+            string roomId,
+            string directionHint,
+            float openingCenterX,
+            float openingWidth,
+            float wallZ,
+            float floorY,
+            float wallHeight,
+            float doorHeight,
+            Material wallMaterial,
+            float wallThickness)
+        {
+            float topHeight = wallHeight - Mathf.Clamp(doorHeight, 0f, wallHeight);
+            if (topHeight <= 0.2f)
+            {
+                return;
+            }
+
+            CreateCube(
+                parent,
+                roomId + "_wall_" + directionHint + "_top",
+                new Vector3(openingCenterX, floorY + doorHeight + topHeight * 0.5f, wallZ),
+                new Vector3(openingWidth, topHeight, wallThickness),
+                wallMaterial);
+        }
+
+        private static void CreateVerticalTopSegment(
+            Transform parent,
+            string roomId,
+            string directionHint,
+            float wallX,
+            float openingCenterZ,
+            float openingWidth,
+            float floorY,
+            float wallHeight,
+            float doorHeight,
+            Material wallMaterial,
+            float wallThickness)
+        {
+            float topHeight = wallHeight - Mathf.Clamp(doorHeight, 0f, wallHeight);
+            if (topHeight <= 0.2f)
+            {
+                return;
+            }
+
+            CreateCube(
+                parent,
+                roomId + "_wall_" + directionHint + "_top",
+                new Vector3(wallX, floorY + doorHeight + topHeight * 0.5f, openingCenterZ),
+                new Vector3(wallThickness, topHeight, openingWidth),
+                wallMaterial);
+        }
+
+        private static float OpeningAxisWidth(BlockoutOpeningPlan opening, string directionHint)
+        {
+            return directionHint == "east" || directionHint == "west"
+                ? Mathf.Max(opening.size.z, opening.size.x)
+                : Mathf.Max(opening.size.x, opening.size.z);
+        }
+
         private static void CreateLightBar(Transform parent, BlockoutLightPlan lightPlan, Material lightMaterial)
         {
             GameObject bar = CreateCube(parent, lightPlan.lightId, lightPlan.position, lightPlan.size, lightMaterial);
@@ -200,6 +387,119 @@ namespace Backrooms.SceneAssembly.Editor
             light.intensity = lightPlan.intensity;
             light.range = 7f;
             light.color = new Color(0.86f, 1f, 0.84f);
+        }
+
+        private static LayoutDebugGizmo CreateLayoutDebugGizmo(SceneAssemblyPlan plan)
+        {
+            GameObject gizmoObject = new GameObject("Layout_Debug_Gizmos");
+            LayoutDebugGizmo gizmo = gizmoObject.AddComponent<LayoutDebugGizmo>();
+            gizmo.Configure(plan);
+            return gizmo;
+        }
+
+        private static void CreateLandmarkPlaceholders(
+            Transform parent,
+            SceneAssemblyPlan plan,
+            Material landmarkMaterial,
+            LayoutDebugGizmo layoutDebugGizmo)
+        {
+            if (plan == null || plan.landmarks == null || plan.landmarks.Count == 0)
+            {
+                Debug.LogWarning("No Level 0 landmarks were available for debug placeholder creation.");
+                return;
+            }
+
+            List<BlockoutRoomPlan> rooms = GetNonNullRooms(plan);
+            if (rooms.Count == 0)
+            {
+                Debug.LogWarning("No rooms were available for debug landmark placeholder placement.");
+                return;
+            }
+
+            for (int i = 0; i < plan.landmarks.Count; i++)
+            {
+                LandmarkProfile landmark = plan.landmarks[i];
+                if (landmark == null)
+                {
+                    continue;
+                }
+
+                BlockoutRoomPlan room = rooms[i % rooms.Count];
+                Vector3 position = CreateLandmarkPosition(room, i);
+                GameObject placeholder = CreateLandmarkPrimitive(parent, landmark, position, landmarkMaterial);
+                LandmarkPlaceholder component = placeholder.AddComponent<LandmarkPlaceholder>();
+                component.Configure(landmark);
+
+                Collider collider = placeholder.GetComponent<Collider>();
+                if (collider != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(collider);
+                }
+
+                if (layoutDebugGizmo != null)
+                {
+                    layoutDebugGizmo.AddLandmark(landmark.landmarkId, position);
+                }
+            }
+        }
+
+        private static List<BlockoutRoomPlan> GetNonNullRooms(SceneAssemblyPlan plan)
+        {
+            List<BlockoutRoomPlan> rooms = new List<BlockoutRoomPlan>();
+            if (plan.rooms == null)
+            {
+                return rooms;
+            }
+
+            foreach (BlockoutRoomPlan room in plan.rooms)
+            {
+                if (room != null)
+                {
+                    rooms.Add(room);
+                }
+            }
+
+            return rooms;
+        }
+
+        private static Vector3 CreateLandmarkPosition(BlockoutRoomPlan room, int index)
+        {
+            float offsetX = ((index % 3) - 1) * Mathf.Min(1.5f, room.size.x * 0.2f);
+            float offsetZ = ((index / 3) % 3 - 1) * Mathf.Min(1.5f, room.size.z * 0.2f);
+            return new Vector3(room.position.x + offsetX, room.position.y + 0.35f, room.position.z + offsetZ);
+        }
+
+        private static GameObject CreateLandmarkPrimitive(
+            Transform parent,
+            LandmarkProfile landmark,
+            Vector3 position,
+            Material landmarkMaterial)
+        {
+            PrimitiveType primitiveType = PrimitiveType.Cube;
+            if (string.Equals(landmark.landmarkType, "floor_trace", StringComparison.OrdinalIgnoreCase))
+            {
+                primitiveType = PrimitiveType.Sphere;
+            }
+            else if (string.Equals(landmark.landmarkType, "lighting_anomaly", StringComparison.OrdinalIgnoreCase))
+            {
+                primitiveType = PrimitiveType.Cylinder;
+            }
+
+            GameObject primitive = GameObject.CreatePrimitive(primitiveType);
+            primitive.name = "Landmark_" + landmark.landmarkId;
+            primitive.transform.SetParent(parent);
+            primitive.transform.position = position;
+            primitive.transform.localScale = primitiveType == PrimitiveType.Sphere
+                ? new Vector3(1.2f, 0.12f, 1.2f)
+                : new Vector3(0.6f, 0.6f, 0.6f);
+
+            Renderer renderer = primitive.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = landmarkMaterial;
+            }
+
+            return primitive;
         }
 
         private static GameObject CreateCube(
@@ -279,11 +579,12 @@ namespace Backrooms.SceneAssembly.Editor
 
         private static void CreateDebugObject(
             SceneAssemblyPlan plan,
-            AssemblyValidationReport validationReport)
+            AssemblyValidationReport validationReport,
+            RouteReadabilityReport readabilityReport)
         {
             GameObject debugObject = new GameObject("Backrooms_Debug");
-            LevelDebugInfo debugInfo = debugObject.AddComponent<LevelDebugInfo>();
-            debugInfo.Configure(plan.identity, plan.grammar, plan.atmosphere, validationReport, plan);
+            Backrooms.Debugging.LevelDebugInfo debugInfo = debugObject.AddComponent<Backrooms.Debugging.LevelDebugInfo>();
+            debugInfo.Configure(plan, validationReport, readabilityReport);
         }
 
         private static List<BlockoutOpeningPlan> GetOpeningsForRoom(SceneAssemblyPlan plan, string roomId)
@@ -312,25 +613,25 @@ namespace Backrooms.SceneAssembly.Editor
 
         private static bool HasOpeningOnWall(List<BlockoutOpeningPlan> openings, string directionHint)
         {
+            return GetFirstOpeningOnWall(openings, directionHint) != null;
+        }
+
+        private static BlockoutOpeningPlan GetFirstOpeningOnWall(List<BlockoutOpeningPlan> openings, string directionHint)
+        {
             if (openings == null || string.IsNullOrWhiteSpace(directionHint))
             {
-                return false;
+                return null;
             }
 
             foreach (BlockoutOpeningPlan opening in openings)
             {
-                if (opening == null)
+                if (opening != null && string.Equals(opening.directionHint, directionHint, StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
-                }
-
-                if (string.Equals(opening.directionHint, directionHint, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
+                    return opening;
                 }
             }
 
-            return false;
+            return null;
         }
 
         private static void CreateOpeningMarker(
@@ -645,6 +946,12 @@ namespace Backrooms.SceneAssembly.Editor
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ValidationReportPath));
             File.WriteAllText(ValidationReportPath, JsonUtility.ToJson(report, true));
+        }
+
+        private static void WriteReadabilityReport(RouteReadabilityReport report)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ReadabilityReportPath));
+            File.WriteAllText(ReadabilityReportPath, JsonUtility.ToJson(report, true));
         }
 
         private static void WriteSynthesisReport(LayoutSynthesisResult result, bool fallbackUsed)

@@ -1,5 +1,6 @@
 using Backrooms.Atmosphere;
 using Backrooms.Grammar;
+using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.SceneAssembly;
 using Backrooms.Validation;
 using UnityEngine;
@@ -30,6 +31,8 @@ namespace Backrooms.Debugging
         public int connectionCount;
         public int openingCount;
         public int landmarkCount;
+        public bool readabilityPassed;
+        public float readabilityScore;
 
         public void Configure(
             LevelIdentityProfile newIdentity,
@@ -70,6 +73,24 @@ namespace Backrooms.Debugging
             connectionCount = plan == null || plan.connections == null ? 0 : plan.connections.Count;
             openingCount = plan == null || plan.openings == null ? 0 : plan.openings.Count;
             landmarkCount = plan == null || plan.landmarks == null ? 0 : plan.landmarks.Count;
+            readabilityPassed = false;
+            readabilityScore = 0f;
+        }
+
+        public void Configure(
+            SceneAssemblyPlan plan,
+            AssemblyValidationReport newValidationReport,
+            RouteReadabilityReport readabilityReport)
+        {
+            Configure(
+                plan == null ? null : plan.identity,
+                plan == null ? null : plan.grammar,
+                plan == null ? null : plan.atmosphere,
+                newValidationReport,
+                plan);
+
+            readabilityPassed = readabilityReport != null && readabilityReport.passed;
+            readabilityScore = readabilityReport == null ? 0f : readabilityReport.totalScore;
         }
     }
 }

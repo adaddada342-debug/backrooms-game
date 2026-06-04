@@ -1,4 +1,5 @@
 using Backrooms.Loading;
+using Backrooms.Transitions.Safety;
 using UnityEngine;
 
 namespace Backrooms.Transitions
@@ -68,6 +69,12 @@ namespace Backrooms.Transitions
                 return;
             }
 
+            if (!TransitionLoopGuard.CanTransition(targetPackageId))
+            {
+                Debug.LogWarning("Level transition blocked by cooldown guard to prevent a rapid reload loop.");
+                return;
+            }
+
             triggered = true;
 
             LevelLoadRequest request = new LevelLoadRequest
@@ -83,6 +90,7 @@ namespace Backrooms.Transitions
             Debug.Log(
                 $"Level transition triggered. targetPackageId='{targetPackageId}', targetLevelId='{targetLevelId}', transitionType='{transitionType}'.");
 
+            TransitionLoopGuard.MarkTransition(targetPackageId);
             levelLoader.Load(request);
         }
     }
