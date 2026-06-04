@@ -18,6 +18,7 @@ namespace Backrooms.EditorTools.SeedBrowser
     {
         private const string SelectedPreviewPath = "Assets/Data/EditorTools/SeedBrowser/level0_selected_seed_preview.json";
         private const string ResultsPath = "Assets/Data/EditorTools/SeedBrowser/level0_seed_browser_results.json";
+        private const string SummaryPath = "Assets/Data/EditorTools/SeedBrowser/level0_seed_browser_summary.json";
 
         private int seedStart = 1001;
         private int seedCount = 20;
@@ -60,6 +61,18 @@ namespace Backrooms.EditorTools.SeedBrowser
             }
             EditorGUILayout.EndHorizontal();
 
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Write All Preview Reports"))
+            {
+                WriteAllPreviewReports();
+            }
+
+            if (GUILayout.Button("Generate Best Readability Scene"))
+            {
+                GenerateBestReadabilityScene();
+            }
+            EditorGUILayout.EndHorizontal();
+
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
             foreach (LayoutPreviewSummary preview in previews)
             {
@@ -72,8 +85,11 @@ namespace Backrooms.EditorTools.SeedBrowser
                 EditorGUILayout.LabelField("synth " + preview.synthesisSucceeded, GUILayout.Width(80));
                 EditorGUILayout.LabelField("assembly " + preview.assemblyValidationPassed, GUILayout.Width(100));
                 EditorGUILayout.LabelField("read " + preview.readabilityScore.ToString("0.00"), GUILayout.Width(80));
+                EditorGUILayout.LabelField("pass " + preview.readabilityPassed, GUILayout.Width(80));
                 EditorGUILayout.LabelField("rooms " + preview.roomCount, GUILayout.Width(70));
                 EditorGUILayout.LabelField("route " + preview.routeLength, GUILayout.Width(70));
+                EditorGUILayout.LabelField("complex " + preview.routeComplexity.ToString("0.00"), GUILayout.Width(90));
+                EditorGUILayout.LabelField("disc -", GUILayout.Width(55));
                 EditorGUILayout.LabelField("issues " + preview.issueCount, GUILayout.Width(70));
                 EditorGUILayout.EndHorizontal();
             }
@@ -91,6 +107,7 @@ namespace Backrooms.EditorTools.SeedBrowser
 
             Directory.CreateDirectory(Path.GetDirectoryName(ResultsPath));
             File.WriteAllText(ResultsPath, JsonUtility.ToJson(new PreviewList { previews = previews }, true));
+            WriteSummary();
             AssetDatabase.Refresh();
         }
 
@@ -116,6 +133,78 @@ namespace Backrooms.EditorTools.SeedBrowser
             AssetDatabase.Refresh();
         }
 
+        private void WriteAllPreviewReports()
+        {
+            if (previews.Count == 0)
+            {
+                GeneratePreviewList();
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(ResultsPath));
+            File.WriteAllText(ResultsPath, JsonUtility.ToJson(new PreviewList { previews = previews }, true));
+            WriteSummary();
+            AssetDatabase.Refresh();
+        }
+
+        private void GenerateBestReadabilityScene()
+        {
+            if (previews.Count == 0)
+            {
+                GeneratePreviewList();
+            }
+
+            LayoutPreviewSummary best = null;
+            foreach (LayoutPreviewSummary preview in previews)
+            {
+                if (preview == null || !preview.synthesisSucceeded)
+                {
+                    continue;
+                }
+
+                if (best == null || preview.readabilityScore > best.readabilityScore)
+                {
+                    best = preview;
+                }
+            }
+
+            if (best != null)
+            {
+                selectedSeed = best.seed;
+                PrimitiveBlockoutSceneBuilder.CreateSceneForSeed(best.seed);
+            }
+        }
+
+        private void WriteSummary()
+        {
+            SeedBrowserSummary summary = new SeedBrowserSummary
+            {
+                seedStart = seedStart,
+                seedCount = seedCount,
+                previews = previews
+            };
+
+            float total = 0f;
+            foreach (LayoutPreviewSummary preview in previews)
+            {
+                if (preview == null)
+                {
+                    continue;
+                }
+
+                total += preview.readabilityScore;
+                if (summary.bestSeed == 0 || preview.readabilityScore > summary.bestReadabilityScore)
+                {
+                    summary.bestSeed = preview.seed;
+                    summary.bestReadabilityScore = preview.readabilityScore;
+                }
+            }
+
+            summary.averageReadabilityScore = previews.Count == 0 ? 0f : total / previews.Count;
+            Directory.CreateDirectory(Path.GetDirectoryName(SummaryPath));
+            File.WriteAllText(SummaryPath, JsonUtility.ToJson(summary, true));
+        }
+
         private static LayoutPreviewSummary CreatePreview(int seed)
         {
             LayoutSynthesisRequest request = Level0LayoutSynthesisRequestFactory.CreateRequestForSeed(seed);
@@ -130,6 +219,17 @@ namespace Backrooms.EditorTools.SeedBrowser
         [Serializable]
         private class PreviewList
         {
+            public List<LayoutPreviewSummary> previews = new List<LayoutPreviewSummary>();
+        }
+
+        [Serializable]
+        private class SeedBrowserSummary
+        {
+            public int seedStart;
+            public int seedCount;
+            public int bestSeed;
+            public float bestReadabilityScore;
+            public float averageReadabilityScore;
             public List<LayoutPreviewSummary> previews = new List<LayoutPreviewSummary>();
         }
     }

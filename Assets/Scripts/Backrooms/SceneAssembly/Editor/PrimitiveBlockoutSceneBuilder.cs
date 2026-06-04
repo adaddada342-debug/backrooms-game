@@ -19,9 +19,13 @@ using Backrooms.LayoutSynthesis.Routes;
 using Backrooms.LayoutSynthesis.Scoring;
 using Backrooms.Loading;
 using Backrooms.Mapping.Runtime;
+using Backrooms.Mapping.Persistence;
+using Backrooms.Mapping.Reports;
+using Backrooms.Mapping.UI;
 using Backrooms.Materials;
 using Backrooms.Materials.Runtime;
 using Backrooms.Player;
+using Backrooms.Runtime.LevelContext;
 using Backrooms.SceneAssembly.Primitive;
 using Backrooms.Soundscape;
 using Backrooms.Soundscape.Runtime;
@@ -49,6 +53,7 @@ namespace Backrooms.SceneAssembly.Editor
         private const string LandmarkPlacementPath = "Assets/Data/LayoutSynthesis/Preview/level0_landmark_placement_plan.json";
         private const string LayoutPreviewSummaryPath = "Assets/Data/LayoutSynthesis/Preview/level0_layout_preview_summary.json";
         private const string Wave9ProductionReportPath = "Assets/Data/EditorTools/wave9_production_report.json";
+        private const string MappingSystemReportPath = "Assets/Data/Mapping/Reports/wave10_mapping_system_report.json";
 
         [MenuItem("Backrooms/Scene Assembly/Create Level 0 Local Blockout Scene")]
         public static void CreateScene()
@@ -141,11 +146,14 @@ namespace Backrooms.SceneAssembly.Editor
             LevelLoader levelLoader = runtimeRoot.AddComponent<LevelLoader>();
             LevelPackageRegistry registry = CreateOrUpdateRegistry(plan);
             levelLoader.SetRegistry(registry);
+            GeneratedLevelRuntimeContext runtimeContext = runtimeRoot.AddComponent<GeneratedLevelRuntimeContext>();
+            runtimeContext.Configure(plan, routeAnnotation, landmarkPlacementPlan, previewSummary);
             CreateSoundscapeRuntime(soundscapePlan, atmosphereReport);
             WriteAtmosphereReport(atmosphereReport);
             CreateDebugObject(plan, validationReport, readabilityReport, atmosphereReport, routeAnnotation, landmarkPlacementPlan);
 
-            CreatePlayer(plan);
+            CreatePlayer(plan, runtimeContext);
+            CreatePrototypeMapUi(runtimeContext);
 
             foreach (BlockoutTransitionPlan transition in plan.transitions)
             {
@@ -180,6 +188,7 @@ namespace Backrooms.SceneAssembly.Editor
                 landmarkPlacementPlan,
                 materialLibrary,
                 soundscapePlan);
+            WriteMappingSystemReport(plan, runtimeContext, landmarkPlacementPlan);
             AssetDatabase.Refresh();
 
             Debug.Log(
@@ -200,6 +209,8 @@ namespace Backrooms.SceneAssembly.Editor
         {
             GameObject root = new GameObject("Room_" + room.roomId);
             root.transform.SetParent(parent);
+            RoomIdentityLabel identityLabel = root.AddComponent<RoomIdentityLabel>();
+            identityLabel.Configure(room.roomId, room.roomType);
 
             Vector3 center = room.position;
             Vector3 size = room.size;
@@ -640,7 +651,7 @@ namespace Backrooms.SceneAssembly.Editor
             return cube;
         }
 
-        private static void CreatePlayer(SceneAssemblyPlan plan)
+        private static void CreatePlayer(SceneAssemblyPlan plan, GeneratedLevelRuntimeContext runtimeContext)
         {
             GameObject player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             player.name = "Player";
@@ -671,6 +682,14 @@ namespace Backrooms.SceneAssembly.Editor
             noteTester.playerCamera = camera;
             noteTester.packageId = plan == null ? string.Empty : plan.packageId;
             noteTester.localAreaId = plan == null ? string.Empty : plan.levelId;
+            noteTester.levelContext = runtimeContext;
+        }
+
+        private static void CreatePrototypeMapUi(GeneratedLevelRuntimeContext runtimeContext)
+        {
+            GameObject mapObject = new GameObject("Prototype_Map_Controller");
+            PrototypeMapCanvasController mapController = mapObject.AddComponent<PrototypeMapCanvasController>();
+            mapController.levelContext = runtimeContext;
         }
 
         private static void CreateTransitionTrigger(
@@ -1159,6 +1178,36 @@ namespace Backrooms.SceneAssembly.Editor
 
             Directory.CreateDirectory(Path.GetDirectoryName(Wave9ProductionReportPath));
             File.WriteAllText(Wave9ProductionReportPath, JsonUtility.ToJson(report, true));
+        }
+
+        private static void WriteMappingSystemReport(
+            SceneAssemblyPlan plan,
+            GeneratedLevelRuntimeContext runtimeContext,
+            LandmarkPlacementPlan landmarkPlacementPlan)
+        {
+            MappingSystemReport report = new MappingSystemReport
+            {
+                reportId = "wave10_mapping_system_report",
+                packageId = plan == null ? string.Empty : plan.packageId,
+                levelId = plan == null ? string.Empty : plan.levelId,
+                seed = plan == null ? 0 : plan.seed,
+                runtimeContextCreated = runtimeContext != null,
+                mapUiCreated = true,
+                notePersistenceEnabled = true,
+                localSavePathAvailable = !string.IsNullOrWhiteSpace(LocalMapSaveService.GetSavePath()),
+                roomCount = plan == null || plan.rooms == null ? 0 : plan.rooms.Count,
+                connectionCount = plan == null || plan.connections == null ? 0 : plan.connections.Count,
+                landmarkPlacementCount = landmarkPlacementPlan == null || landmarkPlacementPlan.placements == null ? 0 : landmarkPlacementPlan.placements.Count,
+                savePath = LocalMapSaveService.GetSavePath()
+            };
+
+            if (runtimeContext == null)
+            {
+                report.AddWarning("Runtime context was not created.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(MappingSystemReportPath));
+            File.WriteAllText(MappingSystemReportPath, JsonUtility.ToJson(report, true));
         }
 
         private static void WriteSynthesisReport(LayoutSynthesisResult result, bool fallbackUsed)
